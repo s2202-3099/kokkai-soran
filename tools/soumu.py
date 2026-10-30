@@ -67,11 +67,11 @@ def smd_candidates(txt_path):
     out = {}
     lines = open(txt_path, encoding="utf-8").read().split("\n")
     for i, line in enumerate(lines):
-        for m in re.finditer(r"(?:^|\s)(?:当|落)\s+([^\d()]+?)\s+(\d{2,3})\s", line):
+        for m in re.finditer(r"(?:^|\s)(?:当|落)\s+([^\d()（）]+?)\s+(?:[男女]\s+)?(\d{2,3})\s", line):
             nm = norm(m.group(1))
             if re.fullmatch(r"[\u3005\u4e00-\u9fff\uf900-\ufaff]{2,8}", nm):
                 out.setdefault(nm, None)
-        for m in re.finditer(r"\(([^()]{2,24})\)", line):
+        for m in re.finditer(r"[(（]([^()（）]{2,24})[)）]", line):
             nm = norm(m.group(1))
             if not re.fullmatch(r"[々぀-ヿ一-鿿豈-﫿A-Za-zー・]{2,12}", nm):
                 continue

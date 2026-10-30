@@ -62,7 +62,7 @@ def kana(t, ib):
 
 
 def sex(t):
-    pat = r"\[\[Category:(?:女性(?:衆議院|参議院|貴族院)議員|[^\]]*女性政治家|日本の女性閣僚|[^\]]*女性地方議会議員)"
+    pat = r"\[\[Category:(?:[^\]|]*の)?女性(?!学)[^\]|]*\]\]"
     return "f" if re.search(pat, t) else "m"
 
 
