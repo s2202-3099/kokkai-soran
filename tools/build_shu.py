@@ -26,7 +26,12 @@ ELECTIONS = {  # 回次: (解散日, 投票日, 定数)
 }
 DISTRICT_VERSION = {48: "2017", 49: "2017", 50: "2022", 51: "2022"}
 LINEAGE = {"自由民主党": "保守系", "立憲民主党": "非自民再編系", "国民民主党": "非自民再編系", "公明党": "中道系",
-           "日本維新の会": "維新系", "日本共産党": "共産党", "社会民主党": "社会党系"}
+           "日本維新の会": "維新系", "日本共産党": "共産党", "社会民主党": "社会党系",
+           "中道改革連合": "中道改革連合",
+           "れいわ新選組": "2019年以降の新党", "参政党": "2019年以降の新党", "日本保守党": "2019年以降の新党",
+           "チームみらい": "2019年以降の新党", "減税日本・ゆうこく連合": "2019年以降の新党"}
+ORG_NOTE = {"中道改革連合": {"founded": "2026-01-16", "dissolved": "",
+                       "_pred": ["立憲民主党", "公明党"]}}
 SOUMU_FILES = {49: ("soumu/t49.xls", "https://www.soumu.go.jp/main_content/000776967.xls"),
                50: ("soumu/t50.xls", "https://www.soumu.go.jp/main_content/000979122.xls"),
                51: ("soumu/t51.xlsx", "https://www.soumu.go.jp/main_content/001061475.xlsx")}
@@ -122,6 +127,20 @@ for n in nums:
                      "dissolved": "", "predecessors": "", "successors": "", "source_id": SRC_ELEC[n]})
         if p not in LINEAGE:
             issues.append(f"系譜を決めていない政党: {p}")
+        if p in ORG_NOTE:
+            orgs[-1].update({k: v for k, v in ORG_NOTE[p].items() if not k.startswith("_")})
+for o in orgs:
+    pred = ORG_NOTE.get(o["name"], {}).get("_pred", [])
+    o["predecessors"] = ";".join(oid_of[x] for x in pred if x in oid_of)
+    for x in pred:
+        if x in oid_of:
+            q = next(z for z in orgs if z["org_id"] == oid_of[x])
+            q["successors"] = ";".join(filter(None, [q["successors"], o["org_id"]]))
+for o in orgs:
+    if o["name"] == "中道改革連合":
+        o["source_id"] = add_source("Wikipedia 中道改革連合", "https://ja.wikipedia.org/wiki/中道改革連合", "wikipedia",
+                                    "111551771")
+ORIGIN = json.load(open(f"{W}/chudo_origin.json")) if os.path.exists(f"{W}/chudo_origin.json") else {}
 
 # ---- 選挙・選挙区 ----
 elections, districts, dist_seen = [], [], set()
@@ -179,6 +198,9 @@ for n in nums:
                       "basis": basis, "source_id": SRC_ELEC[n]})
         if r["party"] != "無所属":
             note = "投票日時点の党派（選挙記事の当選者表）"
+            if r["party"] == "中道改革連合":
+                o = ORIGIN.get((info.get(r["article"]) or {}).get("title", r["article"]))
+                note += f"。{o}（立憲民主党と公明党の衆院議員が2026年1月16日に結成した党で、出身政党で分けた）" if o else ""
             if n == 50 and r["name"] == "河村たかし":
                 note += "。総務省の集計では本人届出（政党等所属）"
             affs.append({"person_id": p, "org_id": oid_of[r["party"]], "start_date": vote, "end_date": "",
