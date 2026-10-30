@@ -91,11 +91,41 @@ def election_rows(t):
     return out
 
 
+def _date(s):
+    s = clean(re.sub(r"<ref[^>]*/>|<ref.*?</ref>|<!--.*?-->", "", s, flags=re.S))
+    if "現職" in s:
+        return "現職"
+    m = re.search(r"(\d{4})年\s*(\d{1,2})月(?:\s*(\d{1,2})日)?", s)
+    if not m:
+        return ""
+    return f"{int(m[1]):04d}-{int(m[2]):02d}" + (f"-{int(m[3]):02d}" if m[3] else "")
+
+
+def house_tenure(ib, house="参議院議員"):
+    """情報欄で、その院の議員の行の直後にある就任日・退任日の組を拾う（番号のずれがあるため並び順で取る）。"""
+    out, on = [], False
+    start = None
+    for line in ib.split("\n"):
+        m = re.match(r"\|\s*([^=|]+?)\s*=(.*)$", line)
+        if not m:
+            continue
+        key, val = m.group(1), m.group(2)
+        if re.match(r"(?:職名|その他職歴)\d*$", key):
+            on = bool(re.search(re.escape(house) + r"(?!会長|副会長|団|総会)", val))
+            continue
+        if on and re.match(r"就任日\d*$", key):
+            start = _date(val.split("<hr>")[-1])
+        elif on and re.match(r"退任日\d*$", key):
+            out.append((start, _date(val)))
+            on = False
+    return out
+
+
 def extract(rec):
     t = rec["text"]
     ib = infobox(t)
     b, bsrc = birth(t, ib)
     return {"title": rec["title"], "pageid": rec["pageid"], "qid": rec.get("qid") or "", "revid": rec.get("revid"),
             "birth": b, "birth_src": bsrc, "kana": kana(t, ib), "sex": sex(t), "birth_pref": birth_pref(ib),
-            "elections": election_rows(t), "disambiguation": rec.get("disambiguation", False),
+            "elections": election_rows(t), "san_tenure": house_tenure(ib), "disambiguation": rec.get("disambiguation", False),
             "length": rec.get("length")}
