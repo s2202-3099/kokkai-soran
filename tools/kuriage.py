@@ -95,7 +95,8 @@ def extract(text):
         if ym:
             vac = seated = f"{int(ym[1]):04d}-{int(ym[2]):02d}"
             last = _body(cells[-1][1])
-            reason = next((k for k in REASONS if k in last), last or "不明")
+            reason = next((k for k in REASONS if k in last), None) or \
+                ("退職" if re.search(r"出馬|立候補", last) else (last or "不明"))
         else:
             vac = f"{int(rm[1]):04d}-{int(rm[2]):02d}-{int(rm[3]):02d}"
             seated = ""

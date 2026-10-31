@@ -425,6 +425,16 @@ for n in nums:
                 issues.append(f"第{n}回 {r['name']}：投票日に{age}歳（被選挙権の年齢未満）")
 
 # ---- 任期中の欠員と繰上当選 ----
+def add_list_party(old, new_pid, start, src):
+    """繰上当選者の所属：名簿の政党（欠員になった議員の当選時の党派）。"""
+    vote = next(e["date"] for e in elections if e["election_id"] == old["election_id"])
+    a = next((x for x in affs if x["person_id"] == old["person_id"] and x["start_date"] in (old["start_date"], vote)), None)
+    if a:
+        affs.append({"person_id": new_pid, "org_id": a["org_id"], "start_date": start, "end_date": "", "role": "",
+                     "basis": "doc", "source_id": src,
+                     "note": f"繰上当選（{start}）。名簿の政党として、欠員になった議員の当選時の党派を入れた"})
+
+
 for n in nums:
     dis_next = ELECTIONS.get(n + 1, ("", "", 0))[0]
     for k in kuri[n]:
@@ -446,6 +456,7 @@ for n in nums:
                           "election_id": f"shu-{n:03d}", "district_id": old["district_id"], "peer_type": "",
                           "route": "繰上", "list_rank": "", "start_date": k["seated"] or k["date"], "end_date": dis_next,
                           "end_reason": "解散" if dis_next else "", "basis": "doc", "source_id": SRC_ELEC[n]})
+            add_list_party(old, pid(k["new_article"]), k["seated"] or k["date"], SRC_ELEC[n])
 
 # ---- 小選挙区の補欠選挙・再選挙と、補選のないまま残った欠員 ----
 by_count = {}
@@ -555,6 +566,7 @@ for typ, n, day, ev in san_events:
                       "election_id": f"san-{n:03d}", "district_id": old["district_id"], "peer_type": "",
                       "route": "繰上", "list_rank": "", "start_date": start, "end_date": end, "end_reason": "任期満了",
                       "basis": "doc", "source_id": SRC_SAN[n], "note": ""})
+        add_list_party(old, np_, start, SRC_SAN[n])
         continue
     old = san_find(n, ev["old_article"], ev["old_name"], day)
     if not old:
