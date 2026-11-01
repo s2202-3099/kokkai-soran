@@ -234,6 +234,15 @@ async function load(){
 /* ---- 時点の計算 ---- */
 const inOffice = (house, D) => S.T.filter(t=>t.house===house && t.start<=D && (!t.end || t.end>=D));
 /* 当選時の党派：その在職の始まり（または選挙の投票日）の所属。行がなければ無所属で当選した人。 */
+/* 投票日の党派：参院議員はその日の所属（as_of の行）があればそれ、なければ当選時。衆院議員は当選時＝投票日。 */
+function partyAt(t, D){
+  if(t.house==="参"){
+    const p=S.P.get(t.pid);
+    const a=p.affs.find(x=>x.asOf===D && !isFaction(x.org));
+    if(a) return a.org==="" ? {org:null, note:a.note, basis:a.basis} : a;
+  }
+  return partyOf(t);
+}
 function partyOf(t){
   const p=S.P.get(t.pid), d=S.E.get(t.eid).date;
   return p.affs.find(a=>a.start===t.start) || (t.route==="補選"||t.route==="繰上"||t.route==="再選挙" ? null : p.affs.find(a=>a.start===d)) || null;
@@ -286,8 +295,8 @@ function renderTop(){
   $("#crumbs").innerHTML = "";
   const rows = S.versions.slice().reverse().map(v=>{
     const shu = inOffice("衆", v.date), {seats} = sanSeats(v.date), san = inOffice("参", v.date);
-    const cs = composition(shu.map(t=>({org:partyOf(t)?.org})));
-    const cn = composition(san.map(t=>({org:partyOf(t)?.org})));
+    const cs = composition(shu.map(t=>({org:partyAt(t,v.date)?.org})));
+    const cn = composition(san.map(t=>({org:partyAt(t,v.date)?.org})));
     return `<a class="vrow" href="#${v.id}">
       <div class="vdate">${jdate(v.date)}<small>第${v.n}回衆院選の投票日・第${v.no}版</small></div>
       <div class="vbands">
@@ -306,14 +315,14 @@ function renderTop(){
     <section aria-labelledby="vh"><h2 id="vh">版</h2>
       <div class="legend">${LIN.map(([n,t])=>`<span><i class="sw" style="--c:var(--l-${t});--m:100%"></i>${n}</span>`).join("")}</div>
       <div class="vlist">${rows}</div>
-      <p class="note">帯の色は政党の系譜です。同じ系譜の党は、その版で人数の多い順に濃い色から塗っています。帯の右端の空きは欠員です。参議院は当選時の党派で数えています。</p>
+      <p class="note">帯の色は政党の系譜です。同じ系譜の党は、その版で人数の多い順に濃い色から塗っています。帯の右端の空きは欠員です。参議院もその日の党派で数えています（国会会議録の会派で確かめたもの）。</p>
     </section>`;
 }
 
 /* ---- 版 ---- */
 function memberRows(house, D){
   return inOffice(house, D).map(t=>{
-    const p=S.P.get(t.pid), a=partyOf(t);
+    const p=S.P.get(t.pid), a=partyAt(t,D);
     return {t,p,a,org:a?.org||null};
   });
 }
@@ -361,7 +370,7 @@ function renderVersion(v){
       </div>
     </header>
     ${houseBlock("shu","衆議院",shu,v.seats,"投票日の党派")}
-    ${houseBlock("san","参議院",san,ss.seats,`${groupsTxt}・当選時の党派`)}
+    ${houseBlock("san","参議院",san,ss.seats,`${groupsTxt}・投票日の党派`)}
     ${postsSection(v, [...shu,...san])}
     ${kinSection(v, [...shu,...san])}
     <section aria-labelledby="eh"><h2 id="eh">その後の異動</h2>
@@ -369,7 +378,7 @@ function renderVersion(v){
       ${eventsBlock(D, v.next?.date)}
     </section>
     <section class="caveat note" aria-label="この版の読み方">
-      <p>参議院の党派は、その議員が当選した時のものです。この投票日の所属は、まだ一人ずつ確かめていません。</p>
+      <p>参議院の党派は、この投票日の所属です。国会会議録でこの日までの最後の発言（なければ直後の発言）の会派を引き、当選時の党派と照らして決めました。会派に合えば当選時の党のまま、合わなければ本人の記事の所属政党の並びや会派の主な党に移し、決め手のないものは「推定」としています。大臣・副大臣などとして話した発言は会派欄が当てにならないので使っていません。議長・副議長は会派を離れるので、歴代議長・副議長の表の出身党派です。人物のページで、一人ずつの会派と発言の日付を見られます。</p>
       <p>当選回数は台帳に入っている範囲（衆議院は1996年、参議院は1992年の選挙から）で数えています。それより前の当選は入っていません。</p>
       ${v.n<=43?`<p>第41〜43回の比例当選者は、比例復活か比例単独かがまだ分かっていないので「比例」とだけ書いています。</p>`:""}
       <p>${facNote(v)}</p>
@@ -487,6 +496,7 @@ function renderPerson(p){
     ${p.prevJob?`<section aria-labelledby="jh"><h2 id="jh">前職</h2><p>${esc(p.prevJob).replace(/／/g,"<br>")}</p><p class="note">本人の記事の情報欄による。</p></section>`:""}
     <section aria-labelledby="th"><h2 id="th">在職の流れ</h2>${timeline(p)}</section>
     ${factionList(p)}
+    ${sanPartyList(p)}
     ${postList(p)}
     ${kinList(p)}
     <section aria-labelledby="rh"><h2 id="rh">在職</h2>
@@ -498,6 +508,17 @@ function renderPerson(p){
       <div class="srcs">${srcIds.map(id=>{const s=S.src[id]; if(!s) return ""; return `<span><a href="${esc(s[1])}" target="_blank" rel="noopener">${esc(s[0])}</a> <small>${s[2]?"版 "+esc(s[2])+" ・ ":""}${sdate(s[3])}取得</small></span>`;}).join("")}</div>
     </section>
     <section class="caveat note"><p>当選回数と在職は、台帳に入っている範囲（衆議院は1996年、参議院は1992年の選挙から）のものです。派閥と役職は各版の投票日時点、親族は自民党版の名簿（2009年・2026年）の分だけです。</p></section>`;
+}
+function sanPartyList(p){
+  const xs=p.affs.filter(a=>a.asOf && !isFaction(a.org)).sort((a,b)=>a.asOf<b.asOf?-1:1);
+  if(!xs.length) return "";
+  return `<section aria-labelledby="sph"><h2 id="sph">各版の投票日の党派（参議院）</h2>
+    <div class="tablebox"><table><thead><tr><th>投票日</th><th>党派</th><th>根拠</th></tr></thead><tbody>${xs.map(a=>{
+      const lin=lineageOf(a.org||null), st=`--c:var(--l-${LIN_TOKEN[lin]||"shoha"});--m:100%`;
+      return `<tr><td class="num"><a href="#${S.versions.find(v=>v.date===a.asOf)?.id||""}">${sdate(a.asOf)}</a></td>
+        <td><span class="pty"><i class="sw" style="${st}"></i>${esc(a.org?pname(S.orgs[a.org][0]):"無所属")}</span></td>
+        <td><span class="sub">${esc(BASIS[a.basis]||a.basis)}</span><div class="sub" style="white-space:normal;max-width:52ch">${esc(a.note.replace(/^投票日の党派；/,""))}</div></td></tr>`;}).join("")}</tbody></table></div>
+    <p class="note">国会会議録で投票日までの最後の発言（なければ直後の発言）の会派と、当選時の党派から決めたもの。「本人の記事」とあるものは、記事の本文で一人ずつ確かめた。</p></section>`;
 }
 function facNote(v){
   if(v.n===45) return "自民党議員の派閥は、自民党版の名簿（2009年8月30日時点、一人ずつ確かめたもの）から取り込みました。";

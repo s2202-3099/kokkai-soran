@@ -1043,6 +1043,76 @@ def exit_at(pid_, day):
     return ent, xs[0], end
 
 
+# ---- 参院議員の投票日時点の党派（国会会議録の会派から）----
+# 参院議員は衆院の投票日には当選から最長6年たっていて、離党・入党・党の合流がありうる。
+# 会議録で投票日にいちばん近い発言の会派を引き、当選時の党派と照らして「その日の党派」を as_of の行にする。
+import kaiha as kaiha_mod
+LINEAGE.update({"新社会党": "社会党系", "改革クラブ（1998年結成）": "非自民再編系", "自由党（2016年結成）": "非自民再編系",
+                "太陽の党": "保守系", "日本のこころを大切にする党": "維新系", "改革クラブ": "保守系",
+                "教育無償化を実現する会": "維新系", "みどりの風": "非自民再編系", "みどりの会議": "諸派", "国民の生活が第一": "非自民再編系"})
+kaiha_mod.MINOR = {k for k, v in LINEAGE.items() if v in ("諸派", "2019年以降の新党")}
+SRC_KAIHA = add_source("国会会議録検索システム（発言者の会派）", "https://kokkai.ndl.go.jp/", "公的記録")
+_kj = os.path.join(W2, "kaiha.json")
+kaiha_raw = json.load(open(_kj)) if os.path.exists(_kj) else {}
+oname = {}
+for o in orgs:
+    oname[o["org_id"]] = o["name"]
+PARTY_KINDS = {"政党"}
+chairs = {}
+for d_, xs in kaiha_mod.CHAIR.items():
+    for nm, role, party in xs:
+        pid_ = unique_person(nm)
+        if pid_:
+            chairs[(pid_, d_)] = (role, party)
+        else:
+            issues.append(f"参院{role} {nm}（{d_}）が台帳で一人に決まらない")
+san_party_at, kaiha_unresolved, kaiha_stats = {}, [], {}
+party_ids = {o["org_id"] for o in orgs if o["kind"] == "政党"}
+_bt = {v["title"]: v["text"] for v in arts.values() if v}
+
+
+def party_org(name):
+    if name == "無所属":
+        return ""
+    if name not in oid_of:
+        oid = OBOOK.get(name)
+        oid_of[name] = oid
+        oname[oid] = name
+        orgs.append({"org_id": oid, "name": name, "kind": "政党", "lineage": LINEAGE.get(name, ""), "founded": "",
+                     "dissolved": "", "predecessors": "", "successors": "", "source_id": SRC_KAIHA})
+        if name not in LINEAGE:
+            issues.append(f"系譜を決めていない政党: {name}")
+    return oid_of[name]
+
+
+for n in nums:
+    D = ELECTIONS[n][1]
+    for t in terms:
+        if t["house"] != "参" or not (t["start_date"] <= D and (not t["end_date"] or t["end_date"] >= D)):
+            continue
+        pid_ = t["person_id"]
+        # 当選時の党派：この在職の始まり（通常選挙は投票日）の所属の行。行がなければ無所属で当選
+        e_date = next(e["date"] for e in elections if e["election_id"] == t["election_id"])
+        keys = (t["start_date"],) if t["route"] in ("補選", "繰上", "再選挙") else (t["start_date"], e_date)
+        mine = [a for a in affs if a["person_id"] == pid_ and a["start_date"] in keys and not a.get("as_of")
+                and a["org_id"] in party_ids]
+        base = oname[mine[0]["org_id"]] if mine else "無所属"
+        r = kaiha_mod.decide(pid_, D, base, kaiha_raw.get(f"{pid_}|{D}"),
+                             kaiha_mod.chain(_bt.get(P[pid_]["jawiki_title"], "")),
+                             chairs.get((pid_, D)))
+        party, basis, note = r
+        if basis == "?":
+            kaiha_unresolved.append(f"{D} {P[pid_]['name']}（{note}）")
+        kaiha_stats.setdefault(D, {}).setdefault("kept" if party == base else "changed", 0)
+        kaiha_stats[D]["kept" if party == base else "changed"] += 1
+        oid = party_org(party)
+        san_party_at[(pid_, D)] = oid
+        affs.append({"person_id": pid_, "org_id": oid, "start_date": "", "end_date": "", "as_of": D, "role": "",
+                     "basis": "est" if basis in ("est", "?") else basis, "source_id": SRC_KAIHA,
+                     "note": f"投票日の党派；{note}"})
+if kaiha_unresolved:
+    issues.append("参院議員の投票日の党派を会派から決めきれず推定にしたもの：" + "、".join(kaiha_unresolved))
+
 snap_conflict = []
 exit_count = {}
 cab_ev = {}
@@ -1059,6 +1129,8 @@ for n in nums:
         if t["start_date"] <= vote and (not t["end_date"] or t["end_date"] >= vote):
             e_date = next(e["date"] for e in elections if e["election_id"] == t["election_id"])
             a = next((x for x in affs if x["person_id"] == t["person_id"] and x["start_date"] in (t["start_date"], e_date)), None)
+            if t["house"] == "参":
+                a = {"org_id": san_party_at.get((t["person_id"], vote))}   # 参院議員は投票日の党派で数える
             if a and a["org_id"] == ldp_oid:
                 members.append(t["person_id"])
     dissolved = vote >= "2024-01-25"   # 2024年1月に麻生派以外の派閥が解散した後の版
