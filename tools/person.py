@@ -164,6 +164,36 @@ def prev_job(ib):
     return s
 
 
+def post_tenure(ib, label):
+    """情報欄で、職名にその役職を含む欄の在任期間を [(始まり, 終わり)] で返す。
+    「A - B<hr>C」のように一つの欄に複数の期間がある書き方も分ける。終わりが現職なら "9999"。"""
+    out, on, starts = [], False, []
+    pat = re.compile(re.escape(label) + r"(?!会長|副会長|団|総会|代行|代理)")
+    for line in ib.split("\n"):
+        m = re.match(r"\|\s*([^=|]+?)\s*=(.*)$", line)
+        if not m:
+            continue
+        key, val = m.group(1), m.group(2)
+        if re.match(r"(?:職名|その他職歴)\d*$", key):
+            on = bool(pat.search(clean(val)))
+            continue
+        if on and re.match(r"就任日\d*$", key):
+            starts = [x for x in re.split(r"<hr\s*/?>", val)]
+        elif on and re.match(r"退任日\d*$", key):
+            ends = [x for x in re.split(r"<hr\s*/?>", val)]
+            for i, seg in enumerate(starts):
+                parts = re.split(r"\s[-－–〜~]\s|\]\][-－–〜~]|[-－–〜~]\s*\[\[", seg)
+                if len(parts) >= 2 and _date(parts[-1]):
+                    a, b = _date(parts[0]), _date(parts[-1])
+                else:
+                    a = _date(seg)
+                    b = _date(ends[i] if i < len(ends) else ends[-1])
+                if a:
+                    out.append((a, "9999" if b in ("現職", "") else b))
+            on = False
+    return out
+
+
 def extract(rec):
     t = rec["text"]
     ib = infobox(t)

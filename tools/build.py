@@ -710,6 +710,7 @@ LDP_SETS = [
 ]
 faction_count = {}
 ldp_resolved = {}   # fname -> {自民党版の名前: person_id}
+jimin26 = {}        # person_id -> (派閥, 区分, 注記)：2026年版の分類（解散時の所属を含む）
 ldp_src = {}
 for fname, as_of, title, url, gmap, bmap, kmap in LDP_SETS:
     path = os.path.join(W2, fname)
@@ -738,6 +739,8 @@ for fname, as_of, title, url, gmap, bmap, kmap in LDP_SETS:
             issues.append(f"派閥の取り込み（{fname}）：{r['n']} を台帳で一人に決められない（{len(ids)}人）")
             continue
         ldp_resolved.setdefault(fname, {})[r["n"]] = next(iter(ids))
+        if fname == "ldp_2026.json":
+            jimin26[next(iter(ids))] = (gmap[r["g"]], r.get("k", ""), r.get("w", ""))
         org_name = gmap[r["g"]]
         if org_name not in oid_of:
             oid = OBOOK.get(org_name)
@@ -813,6 +816,235 @@ for fname, *_ in LDP_SETS:
     for name, st in dat.get("kinstatus", {}).items():
         if st == "checked" and res.get(name):
             kin_checked[res[name]] = max(kin_checked.get(res[name], ""), as_of)
+# ---- 選挙時の内閣（各版の投票日に在任していた閣僚・副大臣・政務官）----
+import cabinet
+LINK_RE = re.compile(r"\[\[([^\]|]+)(?:\|([^\]]+))?\]\]")
+pname_ = lambda x: re.sub(r"（\d{4}年結成）$", "", x)
+CABINETS = [("第1次橋本内閣", "1996-10-20"), ("第1次森内閣", "2000-06-25"), ("第1次小泉第2次改造内閣", "2003-11-09"),
+            ("第2次小泉改造内閣", "2005-09-11"), ("野田第3次改造内閣", "2012-12-16"), ("第2次安倍改造内閣", "2014-12-14"),
+            ("第3次安倍第3次改造内閣", "2017-10-22"), ("第1次岸田内閣", "2021-10-31"), ("第1次石破内閣", "2024-10-27"),
+            ("第1次高市内閣", "2026-02-08")]
+by_title = {p_["jawiki_title"]: p_["person_id"] for p_ in persons}
+cab_evidence = []   # 内閣の記事の所属欄にある派閥（派閥の当てはめで使う）
+cab_unmatched = []
+cab_path = os.path.join(W2, "cabinets.json")
+if os.path.exists(cab_path):
+    cabs = json.load(open(cab_path))
+    for title, day in CABINETS:
+        rec = cabs.get(title)
+        if not rec:
+            continue
+        src_ = add_source(f"Wikipedia {rec['title']}", "https://ja.wikipedia.org/wiki/" + rec["title"], "wikipedia", rec["revid"])
+        for r in cabinet.in_office(cabinet.extract(rec["text"]), day, ""):
+            pid_ = by_title.get(r["article"]) or by_title.get((info.get(r["article"]) or {}).get("title", "")) \
+                or unique_person(r["name"])
+            if not pid_:
+                cab_unmatched.append(f"{r['name']}（{title}・{r['post']}）")
+                continue
+            note = "；".join(filter(None, [r["extra"], r["note"]]))
+            posts.append({"person_id": pid_, "kind": r["kind"], "post": r["post"], "body": title, "start_date": r["start"],
+                          "end_date": r["end"], "as_of": day, "source_id": src_, "note": note[:200]})
+            if r["faction"]:
+                cab_evidence.append({"person_id": pid_, "day": day, "link": r["faction"][0], "label": r["faction"][1],
+                                     "source_id": src_})
+# ---- 党首（各版の衆院選の記事の情報欄）と、自民党の四役・参議院議長（歴代一覧と本人の記事の情報欄）----
+import officers as officers_mod
+LEADER_TITLE = {"自由民主党": "総裁", "日本共産党": "委員長", "社会民主党": "党首", "新進党": "党首", "公明党": "代表",
+                "自由党": "党首", "保守党": "党首", "次世代の党": "党首"}
+for n in nums:
+    t = elec_art[n]["text"][:40000]
+    vote = ELECTIONS[n][1]
+    names = dict(re.findall(r"\|\s*(\d+)党名\s*=\s*([^\n]*)", t))
+    for i, raw in re.findall(r"\|\s*(\d+)党首\s*=\s*([^\n]*)", t):
+        party = LINK_RE.sub(lambda m: m.group(2) or m.group(1), names.get(i, "")).replace("'", "").strip()
+        party = re.sub(r"\s*\(.*?\)", "", party)
+        party_c = by_party(party, vote) if party else ""
+        parts = re.split(r"<hr\s*/?>", re.sub(r"\{\{efn2?[^{}]*\}\}|<ref.*?</ref>|<ref[^>]*/>", "", raw, flags=re.S))
+        for j, part in enumerate(parts):
+            for k_, m in enumerate(LINK_RE.finditer(part)):
+                pid_ = by_title.get(m.group(1).strip()) or by_title.get((info.get(m.group(1).strip()) or {}).get("title", "")) \
+                    or unique_person((m.group(2) or m.group(1)).strip().replace("'", ""))
+                if not pid_:
+                    continue  # 議員でない党首（知事など）や、台帳の範囲外の人
+                title_ = LEADER_TITLE.get(pname_(party_c), "代表")
+                post = title_ if (j == 0 and k_ == 0) or len(parts) == 1 else "共同代表"
+                posts.append({"person_id": pid_, "kind": "党首", "post": post, "body": pname_(party_c), "start_date": "",
+                              "end_date": "", "as_of": vote, "source_id": SRC_ELEC[n],
+                              "note": "衆院選の記事の情報欄の党首" + ("（複数を並べて記載）" if len(parts) > 1 else "")})
+OFFICER_POSTS = [("自由民主党幹事長", "幹事長", "党執行部", "自由民主党"), ("自由民主党総務会長", "総務会長", "党執行部", "自由民主党"),
+                 ("自由民主党政務調査会長", "政務調査会長", "党執行部", "自由民主党"),
+                 ("自由民主党選挙対策委員長", "選挙対策委員長", "党執行部", "自由民主党"), ("参議院議長", "議長", "参議院の役職", "参議院")]
+# 一覧と情報欄で決まらず、本人の記事の本文・継承表で確かめたもの
+OFFICER_FIX = {("2014-12-14", "自由民主党総務会長"): ("二階俊博", "本人の記事の本文（2014年9月、6年ぶりに総務会長に就任）"),
+               ("2021-10-31", "自由民主党政務調査会長"): ("高市早苗", "本人の記事の本文（2021年10月1日、政務調査会長に再就任）"),
+               ("2026-02-08", "自由民主党政務調査会長"): ("小林鷹之", "本人の記事の継承表（第64代、2025年〜現職）"),
+               ("2026-02-08", "自由民主党幹事長"): ("鈴木俊一 (衆議院議員)", "本人の記事の継承表（第57代、2025年〜現職）")}
+off_unresolved = []
+off_path = os.path.join(W2, "officers.json")
+if os.path.exists(off_path):
+    offs = json.load(open(off_path))
+    _op = os.path.join(W2, "officer_people.json")
+    off_people = json.load(open(_op)) if os.path.exists(_op) else {}
+    bt_ = {v["title"]: v for v in arts.values() if v}
+
+    def article_of(a):
+        r = arts.get(a) or arts.get(a.replace(" ", "_")) or bt_.get(a) or off_people.get(a)
+        return r["text"] if r else None
+    off_src = {k: add_source(f"Wikipedia {v['title']}", "https://ja.wikipedia.org/wiki/" + v["title"], "wikipedia", v["revid"])
+               for k, v in offs.items()}
+    for n in nums:
+        vote = ELECTIONS[n][1]
+        for key, post, kind, body in OFFICER_POSTS:
+            if key == "自由民主党選挙対策委員長" and vote < "2007-09-01":
+                continue
+            if n == 45 and key != "参議院議長":
+                continue  # 2009年は自民党版の名簿の党執行部がある
+            r = officers_mod.at(vote, offs[key]["text"], key, article_of)
+            if (vote, key) in OFFICER_FIX:
+                art, why = OFFICER_FIX[(vote, key)]
+                r = (art, "art", why)
+            if not r or r[0] == "?":
+                off_unresolved.append(f"{vote} {key}")
+                continue
+            pid_ = by_title.get(r[0]) or by_title.get((info.get(r[0]) or {}).get("title", "")) \
+                or unique_person(re.sub(r" \(.*\)$", "", r[0]))
+            if not pid_:
+                off_unresolved.append(f"{vote} {key}（{r[0]} が台帳にいない）")
+                continue
+            posts.append({"person_id": pid_, "kind": kind, "post": post, "body": body, "start_date": "", "end_date": "",
+                          "as_of": vote, "source_id": P[pid_]["_src"] if r[1] == "art" else off_src[key], "note": r[2]})
+if off_unresolved:
+    issues.append("投票日の党役員・議長を決められなかったもの：" + "、".join(off_unresolved))
+if cab_unmatched:
+    issues.append("内閣の役職で台帳に結びつかなかった人（民間からの閣僚・補佐官など）：" + "、".join(cab_unmatched))
+# ---- 派閥：残りの版（自民党版の名簿がない版）を、内閣の記事と本人の記事から当てる ----
+import faction as faction_mod
+FAC_SHORT = {"清和政策研究会": "清和会", "平成研究会": "平成研", "近未来政治研究会": "近未来研", "番町政策研究所": "番町研",
+             "政策科学研究所": "政策科学研究所"}
+GENERIC = {"清和会", "平成研", "経世会", "宏池会", "志帥会", "番町研", "大勇会", "為公会", "志公会", "新しい波", "水月会", "有隣会",
+           "清和政策研究会", "平成研究会", "近未来政治研究会", "番町政策研究所", "政策科学研究所", "新財政研究会"}
+
+
+def fac_label(entity, year, old=False):
+    if entity == "無派閥":
+        return "無派閥"
+    if old:
+        # 自民党版（2026年）と同じ書き方にそろえる
+        fixed = {"清和政策研究会": "旧安倍派（清和会）", "平成研究会": "旧茂木派（平成研究会）", "宏池会": "旧岸田派（宏池会）",
+                 "志帥会": "旧二階派（志帥会）", "近未来政治研究会": "旧森山派（近未来政治研究会）"}
+        if entity in fixed and year >= 2021:
+            return fixed[entity]
+        lab = fac_label(entity, year)
+        m = re.match(r"(.+?)（(.+)）$", lab)
+        return f"旧{m.group(2)}（{m.group(1)}）" if m else "旧" + lab
+    c = [(a, l_) for l_, e, a, b in faction_mod.LABELS if e == entity and a <= year <= b and l_ not in GENERIC
+         and not l_.endswith("G")]
+    short = FAC_SHORT.get(entity, entity)
+    if not c:
+        return short
+    lab = max(c)[1]
+    if entity == "宏池会（谷垣派系）":
+        return f"{lab}（宏池会から分かれた加藤派の系統）"
+    return f"{short}（{lab}）" if lab != short else short
+
+
+def fac_org(entity, src_):
+    name = "無派閥" if entity == "無派閥" else entity
+    if name not in oid_of:
+        oid = OBOOK.get(name)
+        oid_of[name] = oid
+        kind = "グループ" if name in ("菅グループ", "石破グループ", "有隣会") else "派閥"
+        orgs.append({"org_id": oid, "name": name, "kind": kind, "lineage": faction_mod.LINEAGE.get(name, "無派閥"),
+                     "founded": "", "dissolved": "", "predecessors": "", "successors": "", "source_id": src_})
+    return oid_of[name]
+
+
+cab_ev = {}
+for ev in cab_evidence:
+    cab_ev[(ev["person_id"], ev["day"])] = ev
+fac_stats, fac_check = {}, {"agree": 0, "disagree": []}
+ldp_oid = oid_of.get("自由民主党")
+for n in nums:
+    vote = ELECTIONS[n][1]
+    if n in (45, 51):
+        continue  # 2009年と2026年は自民党版の名簿から
+    members = []
+    for t in terms:
+        if t["start_date"] <= vote and (not t["end_date"] or t["end_date"] >= vote):
+            e_date = next(e["date"] for e in elections if e["election_id"] == t["election_id"])
+            a = next((x for x in affs if x["person_id"] == t["person_id"] and x["start_date"] in (t["start_date"], e_date)), None)
+            if a and a["org_id"] == ldp_oid:
+                members.append(t["person_id"])
+    dissolved = vote >= "2024-01-25"   # 2024年1月に麻生派以外の派閥が解散した後の版
+    for pid_ in sorted(set(members)):
+        y = int(vote[:4])
+        if dissolved:
+            # 解散後の版は、自民党版（2026年）と同じく解散時の所属（旧派閥）で示す
+            j = jimin26.get(pid_)
+            if j and j[1] in ("old", "left", "est") or (j and j[1] == "none"):
+                ent = "無派閥" if j[0] == "無派閥" else j[0]
+                lab = fac_label(ent, 2023, old=True) if j[1] in ("old", "est") and ent not in ("無派閥", "志公会") else fac_label(ent, 2023)
+                if j[1] == "left":
+                    lab = "無派閥"
+                    ent = "無派閥"
+                affs.append({"person_id": pid_, "org_id": fac_org(ent, ldp_src["ldp_2026.json"]), "start_date": "",
+                             "end_date": "", "as_of": vote, "role": "", "basis": "est" if j[1] == "est" else "doc",
+                             "source_id": ldp_src["ldp_2026.json"],
+                             "note": "；".join(filter(None, [f"【{lab}】", "推定" if j[1] == "est" else "",
+                                                            "2024年1月の解散時の所属（自民党版2026年の分類）。この投票日には麻生派以外の派閥はない"]))})
+                fac_stats.setdefault(vote, {}).setdefault("doc", 0)
+                fac_stats[vote]["doc"] += 1
+                continue
+            if j and j[1] == "member" and "移籍" not in j[2]:
+                affs.append({"person_id": pid_, "org_id": fac_org("志公会", ldp_src["ldp_2026.json"]), "start_date": "",
+                             "end_date": "", "as_of": vote, "role": "", "basis": "est", "source_id": ldp_src["ldp_2026.json"],
+                             "note": "【志公会（麻生派）】；推定；2026年10月の自民党版で麻生派"})
+                fac_stats.setdefault(vote, {}).setdefault("est", 0)
+                fac_stats[vote]["est"] += 1
+                continue
+        rec = info.get(P[pid_]["jawiki_title"]) or {}
+        raw = arts.get(P[pid_]["jawiki_title"]) or arts.get(P[pid_]["jawiki_title"].replace(" ", "_")) or {}
+        if not raw:
+            raw = next((v for v in arts.values() if v and v.get("title") == P[pid_]["jawiki_title"]), {}) or {}
+        text = raw.get("text", "")
+        res, why, src_, basis = None, "", P[pid_]["_src"], ""
+        ce = None if dissolved else cab_ev.get((pid_, vote))
+        guess = None
+        day_ = "2023-12-31" if dissolved else vote
+        if text:
+            ch = faction_mod.chain(person.infobox(text))
+            guess = faction_mod.at(day_, ch)
+            gtxt = "→".join(ch)
+            if not guess:
+                guess = faction_mod.at_events(day_, faction_mod.events(text))
+                gtxt = "本文の入会・退会の記述"
+        if ce:
+            c = faction_mod.lookup(ce["label"], y)
+            if c and c[0][0]:
+                res, basis, src_ = c[0][0], "doc", ce["source_id"]
+                why = f"内閣の記事の所属欄（{ce['label']}）"
+                if guess:
+                    if guess[0] == res:
+                        fac_check["agree"] += 1
+                    else:
+                        fac_check["disagree"].append(f"{P[pid_]['name']} {vote}：内閣{res}・推定{guess[0]}")
+        if not res and guess:
+            res, basis = guess[0], guess[2]
+            why = f"本人の記事の所属政党欄（{gtxt}）から" + ("" if basis == "art" else "推定")
+        if res in ("為公会", "番町政策研究所") and vote >= "2017-07-01":
+            res = "志公会"   # 2017年7月、為公会と番町政策研究所（山東派）などが合流して志公会に
+        if not res:
+            fac_stats.setdefault(vote, {}).setdefault("不明", 0)
+            fac_stats[vote]["不明"] += 1
+            continue
+        fac_stats.setdefault(vote, {}).setdefault(basis, 0)
+        fac_stats[vote][basis] += 1
+        lab = fac_label(res, 2023 if dissolved else y)
+        if dissolved and res not in ("無派閥", "志公会"):
+            lab, why = fac_label(res, 2023, old=True), why + "。2024年1月の解散前の所属（この投票日には派閥はない）"
+        affs.append({"person_id": pid_, "org_id": fac_org(res, src_), "start_date": "", "end_date": "", "as_of": vote,
+                     "role": "", "basis": basis, "source_id": src_,
+                     "note": "；".join(filter(None, [f"【{lab}】", "推定" if basis == "est" else "", why]))})
 kin = sorted(kin.values(), key=lambda k: (k["person_id"], k["degree"] if k["degree"] != "" else 99))
 posts.sort(key=lambda r: r["as_of"])  # 同じ時点の中は自民党版の並び（内閣の序列など）のまま
 for p_ in persons:
@@ -862,7 +1094,7 @@ missing_birth = [p["name"] for p in persons if not p["birth_date"]]
 missing_kana = [p["name"] for p in persons if not p["name_kana"]]
 report = {"persons": len(persons), "terms": len(terms), "affiliations": len(affs), "orgs": len(orgs),
           "sources": len(sources), "checks": checks, "missing_birth": missing_birth, "missing_kana": missing_kana,
-          "issues": issues, "by_elections": by_count, "factions": faction_count, "posts": len(posts), "kin": len(kin), "san_snapshot": san_snap, "tenure_check": tenure_check, "san_by_elections": by_count_san,
+          "issues": issues, "by_elections": by_count, "factions": faction_count, "posts": len(posts), "kin": len(kin), "faction_stats": fac_stats, "faction_check": fac_check, "san_snapshot": san_snap, "tenure_check": tenure_check, "san_by_elections": by_count_san,
           "san_routes": {f"{n}-{r}": c for (n, r), c in san_count.items()},
           "routes": {n: {k: sum(1 for t in terms if t["election_id"] == f"shu-{n:03d}" and t["route"] == k)
                          for k in ("小選挙区", "比例復活", "比例単独", "比例")} for n in nums}}
