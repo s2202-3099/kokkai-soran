@@ -34,6 +34,7 @@
   --l-saihen:#ef7f73; --l-shakai:#5fbfe0; --l-kyosan:#d46a84; --l-shoha:#9aa0b0; --l-mush:#5a6070;
   color-scheme:dark}
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.65;margin:0;
   padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 56px}
 body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
@@ -84,6 +85,16 @@ header.page{display:flex;flex-direction:column;gap:10px}
 .seat:hover,.seat:focus-visible{outline:2px solid var(--ink);outline-offset:1px}
 .seat.vac{background:transparent;box-shadow:inset 0 0 0 1px var(--muted)}
 
+.fig-hemi{max-width:760px;width:100%;margin-inline:auto}
+.hemi{width:100%;height:auto;display:block}
+.hemi .hd{fill:color-mix(in oklab,var(--c) var(--m),var(--tint))}
+.hemi .hd.vac{fill:none;stroke:var(--muted);stroke-width:.5}
+.hemi a:hover .hd,.hemi a:focus-visible .hd{stroke:var(--ink);stroke-width:1.2}
+.hemi .hn{font-family:var(--display);font-weight:800;font-size:20px;fill:var(--ink)}
+.seg{display:inline-flex;align-self:flex-start;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--surface)}
+.seg button{font-size:13px;padding:5px 14px;border:0;background:transparent;cursor:pointer;color:var(--muted)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+td.job{max-width:18em;overflow:hidden;text-overflow:ellipsis}
 /* 名簿の表 */
 .controls{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center}
 .controls input{padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:var(--surface);min-width:0;flex:0 1 220px}
@@ -161,6 +172,8 @@ section{display:flex;flex-direction:column;gap:12px}
 </div>
 <script>
 "use strict";
+let seatView = "hemi";
+try{ const v=localStorage.getItem("kokkai-seatview"); if(v==="grid"||v==="hemi") seatView=v; }catch(e){}
 const LIN = [["保守系","hoshu"],["維新系","ishin"],["2019年以降の新党","shinto"],["中道系","chudo"],["中道改革連合","kaikaku"],
   ["非自民再編系","saihen"],["社会党系","shakai"],["共産党","kyosan"],["諸派","shoha"],["無所属","mush"]];
 const LIN_ORDER = Object.fromEntries(LIN.map((l,i)=>[l[0],i]));
@@ -184,11 +197,11 @@ function age(birth, at){
 async function load(){
   const r = await fetch("site.json");
   const j = await r.json();
-  const P = new Map(j.persons.map(p=>[p[0],{id:p[0],name:p[1],kana:p[2],birth:p[3],death:p[4],sex:p[5],pref:p[6],title:p[7],qid:p[8],terms:[],affs:[],alias:[]}]));
+  const P = new Map(j.persons.map(p=>[p[0],{id:p[0],name:p[1],kana:p[2],birth:p[3],death:p[4],sex:p[5],pref:p[6],title:p[7],qid:p[8],first:p[9],firstHouse:p[10],prevJob:p[11],terms:[],affs:[],alias:[]}]));
   const E = new Map(j.elections.map(e=>[e[0],{id:e[0],house:e[1],n:e[2],date:e[3],kind:e[4],seats:e[5],src:e[6]}]));
   const T = j.terms.map(t=>({id:t[0],pid:t[1],house:t[2],eid:t[3],did:t[4],route:t[5],start:t[6],end:t[7],reason:t[8],basis:t[9],src:t[10],note:t[11]}));
   for(const t of T) P.get(t.pid).terms.push(t);
-  for(const a of j.affs) P.get(a[0]).affs.push({org:a[1],start:a[2],end:a[3],basis:a[4],src:a[5],note:a[6]});
+  for(const a of j.affs) P.get(a[0]).affs.push({org:a[1],start:a[2],end:a[3],basis:a[4],src:a[5],note:a[6],asOf:a[7]});
   for(const a of j.aliases) P.get(a[0])?.alias.push(a[1]);
   for(const p of P.values()){ p.terms.sort((a,b)=>a.start<b.start?-1:1); p.affs.sort((a,b)=>a.start<b.start?-1:1); }
   const distOrder = new Map(Object.keys(j.districts).map((k,i)=>[k,i]));
@@ -209,6 +222,17 @@ function partyOf(t){
   const p=S.P.get(t.pid), d=S.E.get(t.eid).date;
   return p.affs.find(a=>a.start===t.start) || (t.route==="補選"||t.route==="繰上"||t.route==="再選挙" ? null : p.affs.find(a=>a.start===d)) || null;
 }
+const isFaction = id => ["派閥","グループ"].includes(S.orgs[id]?.[4]);
+/* 派閥：その版の投票日から次の版の投票日までの間の「その日の所属」（as_of）。 */
+function factionAt(p, v){
+  const hi = v.next?.date;
+  const a = p.affs.find(x=>isFaction(x.org) && x.asOf && x.asOf>=v.date && (!hi || x.asOf<hi));
+  if(!a) return null;
+  const label = (a.note.match(/【(.+?)】/)||[])[1] || S.orgs[a.org][0];
+  return {a, label, kind:(a.note.match(/】；(推定|旧派閥[^；]*|解散前に退会)/)||[])[1]||"", asOf:a.asOf};
+}
+const facVersions = () => new Set(S.versions.filter(v=>[...S.P.values()].some(p=>factionAt(p,v))).map(v=>v.id));
+let FACV;
 function lineageOf(orgId){ return orgId ? (S.orgs[orgId][1]||"諸派") : "無所属"; }
 function winsBefore(p, house, D){ return p.terms.filter(t=>t.house===house && t.start<=D).length; }
 function sanSeats(D){
@@ -281,14 +305,21 @@ function renderVersion(v){
   const houseBlock=(key,label,rows,seats,sub)=>{
     const comp=composition(rows); comp.style=all.style;
     const vac=seats-rows.length;
-    const cells=sortRows(rows.slice()).map(r=>`<a class="seat" href="#${r.p.id}" style="${all.style.get(r.org||"無所属")}" title="${esc(r.p.name)}（${esc(r.org?pname(S.orgs[r.org][0]):"無所属")}・${esc(S.dist[r.t.did]||"")}）"><span hidden>${esc(r.p.name)}</span></a>`).join("")
+    const sorted=sortRows(rows.slice());
+    const tip=r=>`${r.p.name}（${r.org?pname(S.orgs[r.org][0]):"無所属"}・${S.dist[r.t.did]||""}）`;
+    const cells=sorted.map(r=>`<a class="seat" href="#${r.p.id}" style="${all.style.get(r.org||"無所属")}" title="${esc(tip(r))}"><span hidden>${esc(r.p.name)}</span></a>`).join("")
       + `<span class="seat vac" title="欠員"></span>`.repeat(Math.max(vac,0));
+    // 議場図は左から右へ：系譜の並びを逆にして、共産党・社会党系が左、保守系が右に来るように
+    const hemiItems=sorted.slice().reverse().map(r=>({href:"#"+r.p.id,tip:tip(r),style:all.style.get(r.org||"無所属")}));
+    const half=Math.floor(Math.max(vac,0)/2);
+    const items=[...Array(half).fill({vac:true}),...hemiItems,...Array(Math.max(vac,0)-half).fill({vac:true})];
     return `<section class="house" id="h-${key}" aria-labelledby="hh-${key}">
       <div class="house-head"><h2 id="hh-${key}">${label}</h2><span class="sub num">定数 ${seats} ・ 在職 ${rows.length}${vac>0?` ・ 欠員 ${vac}`:""}</span><span class="sub">${sub}</span></div>
       ${bandHTML(comp, seats)}
       <div class="legend">${comp.groups.map(g=>`<span><i class="sw" style="${all.style.get(g.org||"無所属")}"></i>${esc(g.name)} <b>${g.n}</b></span>`).join("")}${vac>0?`<span><i class="sw vac"></i>欠員 <b>${vac}</b></span>`:""}</div>
-      <div class="seats" aria-label="議席図（一人一マス）">${cells}</div>
-      ${tableBlock(key, rows, D, comp)}
+      <div class="fig-hemi" data-fig="hemi"${seatView==="hemi"?"":" hidden"}>${hemiSVG(items, seats)}</div>
+      <div class="seats" data-fig="grid" aria-label="議席図（一人一マス）"${seatView==="grid"?"":" hidden"}>${cells}</div>
+      ${tableBlock(key, rows, D, comp, v)}
     </section>`;
   };
   const groupsTxt = ss.groups.map(g=>`${g.date.slice(0,4)}年の組`).join("と");
@@ -298,6 +329,10 @@ function renderVersion(v){
       <h1>${jdate(D)}</h1>
       <p class="lede">この日の国会の全構成です。衆議院はこの総選挙の当選者、参議院はこの日に在職していた議員を載せています。${nextTxt}</p>
       <div class="totals"><span>衆議院 <b>${shu.length}</b></span><span>参議院 <b>${san.length}</b>${ss.seats-san.length>0?`（欠員 ${ss.seats-san.length}）`:""}</span><span>合わせて <b>${shu.length+san.length}</b></span></div>
+      <div class="seg" role="group" aria-label="議席の見せ方">
+        <button type="button" data-view="hemi" aria-pressed="${seatView==="hemi"}">議場図</button>
+        <button type="button" data-view="grid" aria-pressed="${seatView==="grid"}">マス</button>
+      </div>
     </header>
     ${houseBlock("shu","衆議院",shu,v.seats,"投票日の党派")}
     ${houseBlock("san","参議院",san,ss.seats,`${groupsTxt}・当選時の党派`)}
@@ -309,10 +344,17 @@ function renderVersion(v){
       <p>参議院の党派は、その議員が当選した時のものです。この投票日の所属は、まだ一人ずつ確かめていません。</p>
       <p>当選回数は台帳に入っている範囲（衆議院は1996年、参議院は1992年の選挙から）で数えています。それより前の当選は入っていません。</p>
       ${v.n<=43?`<p>第41〜43回の比例当選者は、比例復活か比例単独かがまだ分かっていないので「比例」とだけ書いています。</p>`:""}
+      <p>${FACV.has(v.id)?`自民党議員の派閥は、自民党版の名簿（${v.n===45?"2009年8月30日時点":"2026年10月15日時点。2024年に解散した派閥は解散時の所属を「旧」で示す"}）から取り込んだものです。`:"この版の派閥はまだ調べていません。いま入っているのは2009年版と2026年版だけです。"}</p>
+      <p>初当選の年と前職は、本人の記事の選挙歴・情報欄によります。</p>
     </section>`;
   bindTables();
+  document.querySelectorAll(".seg button[data-view]").forEach(b=>b.addEventListener("click",()=>{
+    seatView=b.dataset.view; try{ localStorage.setItem("kokkai-seatview",seatView); }catch(e){}
+    document.querySelectorAll(".seg button[data-view]").forEach(x=>x.setAttribute("aria-pressed", String(x.dataset.view===seatView)));
+    document.querySelectorAll("[data-fig]").forEach(f=>{ f.hidden = f.dataset.fig!==seatView; });
+  }));
 }
-function tableBlock(key, rows, D, comp){
+function tableBlock(key, rows, D, comp, v){
   const isShu = key==="shu";
   const sorted = rows.slice().sort((a,b)=>(S.distOrder.get(a.t.did)??0)-(S.distOrder.get(b.t.did)??0)||(a.p.kana<b.p.kana?-1:1));
   const body = sorted.map(r=>{
@@ -321,19 +363,27 @@ function tableBlock(key, rows, D, comp){
     const grp = isShu ? "" : `<td class="num">${S.E.get(r.t.eid).date.slice(0,4)}</td>`;
     const tags = [r.t.route==="補選"||r.t.route==="繰上"||r.t.route==="再選挙"?`<span class="tag">${esc(r.t.route)}</span>`:"",
       r.t.note && /合併選挙|誤り|簗瀬/.test(r.t.note)?`<span class="tag warn" title="${esc(r.t.note)}">注記</span>`:""].join(" ");
-    return `<tr data-org="${esc(r.org||"")}" data-q="${esc(r.p.name+r.p.kana.replace(/\s/g,"")+(S.dist[r.t.did]||""))}">
+    const ldp = r.org && S.orgs[r.org][0]==="自由民主党";
+    const f = factionAt(r.p, v);
+    const facCell = f ? `${esc(f.label)}${f.kind?`<div class="sub">${esc(f.kind.replace(/（.*$/,""))}</div>`:""}` : (ldp ? `<span class="sub">${FACV.has(v.id)?"記載なし":"未調査"}</span>` : "");
+    const first = r.p.first ? `${r.p.first}${r.p.firstHouse && r.p.firstHouse!==(isShu?"衆":"参")?`<span class="sub">（${r.p.firstHouse}）</span>`:""}` : `<span class="sub">不明</span>`;
+    const job = r.p.prevJob || "";
+    return `<tr data-org="${esc(r.org||"")}" data-q="${esc(r.p.name+r.p.kana.replace(/\s/g,"")+(S.dist[r.t.did]||"")+(f?f.label:"")+job)}">
       <td><a href="#${r.p.id}">${esc(r.p.name)}</a><div class="sub">${esc(r.p.kana)}</div></td>
       <td class="r">${age(r.p.birth,D)}</td>
       <td><span class="pty"><i class="sw" style="${comp.style.get(r.org||"無所属")}"></i>${esc(org)}</span>${sub?`<div class="sub">${sub}</div>`:""}</td>
+      <td>${facCell}</td>
       <td>${esc(S.dist[r.t.did]||"")}</td>${grp}
       <td>${esc(routeLabel(r.t))} ${tags}</td>
-      <td class="r">${winsBefore(r.p, isShu?"衆":"参", D)}</td></tr>`;
+      <td class="r">${winsBefore(r.p, isShu?"衆":"参", D)}</td>
+      <td class="r">${first}</td>
+      <td class="job" title="${esc(job)}">${esc(job)}</td></tr>`;
   }).join("");
   return `<div class="controls">
-      <input type="search" id="f-${key}" placeholder="名簿を絞り込む（名前・選挙区）" aria-label="${isShu?"衆議院":"参議院"}の名簿を絞り込む">
+      <input type="search" id="f-${key}" placeholder="名簿を絞り込む（名前・選挙区・派閥・前職）" aria-label="${isShu?"衆議院":"参議院"}の名簿を絞り込む">
       <div class="chips" role="group" aria-label="党派で絞り込む">${comp.groups.map(g=>`<button class="chip" type="button" data-for="${key}" data-org="${esc(g.org||"")}" aria-pressed="false"><i class="sw" style="${comp.style.get(g.org||"無所属")}"></i>${esc(g.name)}</button>`).join("")}</div>
     </div>
-    <div class="tablebox"><table id="t-${key}"><thead><tr><th>氏名</th><th class="r">年齢</th><th>党派</th><th>選挙区</th>${isShu?"":"<th>改選年</th>"}<th>当選の経路</th><th class="r" title="台帳の範囲での回数">当選回数</th></tr></thead><tbody>${body}</tbody></table></div>`;
+    <div class="tablebox"><table id="t-${key}"><thead><tr><th>氏名</th><th class="r">年齢</th><th>党派</th><th>派閥</th><th>選挙区</th>${isShu?"":"<th>改選年</th>"}<th>当選の経路</th><th class="r" title="台帳の範囲での回数">当選回数</th><th class="r">初当選</th><th>前職</th></tr></thead><tbody>${body}</tbody></table></div>`;
 }
 function routeLabel(t){ return t.route==="比例" && t.house==="衆" ? "比例（復活か単独か未判明）" : t.route; }
 function bindTables(){
@@ -398,10 +448,13 @@ function renderPerson(p){
       <div><dt>生年月日</dt><dd>${p.birth?jdate(p.birth):"未判明"}</dd></div>
       <div><dt>出生地</dt><dd>${esc(p.pref||"未判明")}</dd></div>
       <div><dt>性別</dt><dd>${sex}</dd></div>
+      <div><dt>初当選</dt><dd>${p.first?`${p.first}年（${p.firstHouse==="衆"?"衆議院":"参議院"}）`:"不明"}</dd></div>
       <div><dt>当選（台帳の範囲）</dt><dd>衆議院 ${shuN}回 ・ 参議院 ${sanN}回</dd></div>
       <div><dt>記事</dt><dd>${wiki?`<a href="${wiki}" target="_blank" rel="noopener">Wikipedia</a>`:""}${p.qid?` ・ <a href="https://www.wikidata.org/wiki/${esc(p.qid)}" target="_blank" rel="noopener">${esc(p.qid)}</a>`:""}</dd></div>
     </dl>
+    ${p.prevJob?`<section aria-labelledby="jh"><h2 id="jh">前職</h2><p>${esc(p.prevJob).replace(/／/g,"<br>")}</p><p class="note">本人の記事の情報欄による。</p></section>`:""}
     <section aria-labelledby="th"><h2 id="th">在職の流れ</h2>${timeline(p)}</section>
+    ${factionList(p)}
     <section aria-labelledby="rh"><h2 id="rh">在職</h2>
       <div class="tablebox"><table><thead><tr><th>期間</th><th>院</th><th>選挙</th><th>選挙区</th><th>経路</th><th>党派（当選時）</th><th>根拠</th></tr></thead><tbody>${rows}</tbody></table></div>
     </section>
@@ -411,6 +464,33 @@ function renderPerson(p){
       <div class="srcs">${srcIds.map(id=>{const s=S.src[id]; if(!s) return ""; return `<span><a href="${esc(s[1])}" target="_blank" rel="noopener">${esc(s[0])}</a> <small>${s[2]?"版 "+esc(s[2])+" ・ ":""}${sdate(s[3])}取得</small></span>`;}).join("")}</div>
     </section>
     <section class="caveat note"><p>当選回数と在職は、台帳に入っている範囲（衆議院は1996年、参議院は1992年の選挙から）のものです。経歴・親族・役職はこれから入れます。</p></section>`;
+}
+function factionList(p){
+  const fs=p.affs.filter(a=>isFaction(a.org)).sort((a,b)=>a.asOf<b.asOf?-1:1);
+  if(!fs.length) return "";
+  return `<section aria-labelledby="fh"><h2 id="fh">派閥</h2>
+    <div class="tablebox"><table><thead><tr><th>時点</th><th>派閥</th><th>根拠・注記</th></tr></thead><tbody>${fs.map(a=>{
+      const label=(a.note.match(/【(.+?)】/)||[])[1]||S.orgs[a.org][0];
+      const rest=a.note.replace(/^【.+?】；?/,"");
+      return `<tr><td class="num">${sdate(a.asOf)}</td><td>${esc(label)}</td><td><span class="sub">${esc(BASIS[a.basis]||a.basis)}</span>${rest?`<div class="sub" style="white-space:normal;max-width:48ch">${esc(rest)}</div>`:""}</td></tr>`;}).join("")}</tbody></table></div>
+    <p class="note">いまは自民党版の名簿（2009年・2026年）から取り込んだ時点の所属だけです。</p></section>`;
+}
+/* 半円の議場図。座席を内側から外側の段に、段の長さに比例して配り、角度の順（左から右）に人を並べる。 */
+function hemiSVG(items, seats){
+  const N=items.length; if(!N) return "";
+  const R=Math.max(4,Math.round(Math.sqrt(N*0.3))), r0=0.34;
+  const radii=[...Array(R)].map((_,i)=>r0+(1-r0)*i/(R-1)), sum=radii.reduce((a,b)=>a+b,0);
+  const cnt=radii.map(r=>Math.floor(N*r/sum)); let left=N-cnt.reduce((a,b)=>a+b,0);
+  for(let i=R-1;left>0;i=(i-1+R)%R){ cnt[i]++; left--; }
+  const pts=[]; radii.forEach((r,i)=>{ const n=cnt[i]; for(let j=0;j<n;j++){ const th=n===1?Math.PI/2:Math.PI*(1-j/(n-1)); pts.push({th,r}); } });
+  pts.sort((a,b)=>(b.th-a.th)||(a.r-b.r));
+  const gap=(1-r0)/(R-1), dot=Math.min(gap*0.42, Math.PI*r0/(cnt[0]-1||1)*0.45)*100;
+  const circles=pts.map((pt,k)=>{
+    const it=items[k], x=(Math.cos(pt.th)*pt.r*100).toFixed(2), y=(-Math.sin(pt.th)*pt.r*100).toFixed(2);
+    if(it.vac) return `<circle class="hd vac" cx="${x}" cy="${y}" r="${(dot*0.86).toFixed(2)}"><title>欠員</title></circle>`;
+    return `<a href="${it.href}"><circle class="hd" cx="${x}" cy="${y}" r="${dot.toFixed(2)}" style="${it.style}"><title>${esc(it.tip)}</title></circle></a>`;
+  }).join("");
+  return `<svg class="hemi" viewBox="-104 -104 208 110" role="img" aria-label="議場図（${N}議席）">${circles}<text x="0" y="-4" text-anchor="middle" class="hn">${seats}</text></svg>`;
 }
 function timeline(p){
   const y0=1992, y1=2032, W=1000, L=34, R=10, H=78;
@@ -455,7 +535,7 @@ function route(){
   document.title = t ? `${t} ・ 議員総覧` : "議員総覧";
   window.scrollTo(0,0);
 }
-load().then(()=>{ bindSearch(); route(); addEventListener("hashchange",route); })
+load().then(()=>{ FACV=facVersions(); bindSearch(); route(); addEventListener("hashchange",route); })
   .catch(err=>{ $("#main").innerHTML=`<p class="loading">台帳（site.json）を読み込めませんでした。ページを開き直してください。（${esc(err.message)}）</p>`; });
 </script>
 <!-- site:body-end -->

@@ -17,13 +17,14 @@ def rows(name):
 
 elections = [[e["election_id"], e["house"], int(e["number"]), e["date"], e["kind"], int(e["seats"]), e["source_id"]]
              for e in rows("elections.csv")]
-orgs = {o["org_id"]: [o["name"], o["lineage"], o["predecessors"], o["successors"]] for o in rows("orgs.csv")}
+orgs = {o["org_id"]: [o["name"], o["lineage"], o["predecessors"], o["successors"], o["kind"]] for o in rows("orgs.csv")}
 districts = {d["district_id"]: d["name"] for d in rows("districts.csv")}
 persons = [[p["person_id"], p["name"], p["name_kana"], p["birth_date"], p["death_date"], p["sex"], p["birth_pref"],
-            p["jawiki_title"], p["wikidata_qid"]] for p in rows("persons.csv")]
+            p["jawiki_title"], p["wikidata_qid"], p.get("first_elected", ""), p.get("first_house", ""),
+            p.get("prev_job", "")] for p in rows("persons.csv")]
 terms = [[t["term_id"], t["person_id"], t["house"], t["election_id"], t["district_id"], t["route"], t["start_date"],
           t["end_date"], t["end_reason"], t["basis"], t["source_id"], t.get("note", "")] for t in rows("terms.csv")]
-affs = [[a["person_id"], a["org_id"], a["start_date"], a["end_date"], a["basis"], a["source_id"], a["note"]]
+affs = [[a["person_id"], a["org_id"], a["start_date"], a["end_date"], a["basis"], a["source_id"], a["note"], a.get("as_of", "")]
         for a in rows("affiliations.csv")]
 sources = {s["source_id"]: [s["title"], s["url"], s["revision_id"], s["accessed"]] for s in rows("sources.csv")}
 aliases = [[a["person_id"], a["alias"]] for a in rows("aliases.csv")]

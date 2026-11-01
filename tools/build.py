@@ -217,9 +217,14 @@ SMD = {n: set(soumu.smd_candidates(os.path.join(W, f"soumu/c{n}.txt"))) for n in
 sources = []
 
 
+OLD_ACCESSED = {r["source_id"]: r["accessed"] for r in read_old("sources.csv")}
+
+
 def add_source(title, url, kind, rev=""):
     sid = SBOOK.get((url, str(rev)))
-    sources.append({"source_id": sid, "title": title, "url": url, "accessed": TODAY, "revision_id": rev, "kind": kind})
+    # 取得日は、その版を初めて記録した日のまま残す（作り直すたびに変えない）
+    sources.append({"source_id": sid, "title": title, "url": url, "accessed": OLD_ACCESSED.get(sid, TODAY),
+                    "revision_id": rev, "kind": kind})
     return sid
 
 
@@ -667,6 +672,87 @@ for n in nums:
             diff.append(f"女性 公式{women_off}・台帳{women_mine}")
     checks.append((n, basis_name, sum(mine.values()), diff))
 
+# ---- 人物：初当選の年と前職（本人の記事から） ----
+FIRST_RANGE = {"shu-041", "san-016", "san-017"}  # 台帳でいちばん古い回。ここが最初の在職でも、それより前の当選がありうる
+for p_ in persons:
+    rec = info.get(p_["jawiki_title"]) or {}
+    ts = sorted((t for t in terms if t["person_id"] == p_["person_id"]), key=lambda t: t["start_date"])
+    led = (int(ts[0]["start_date"][:4]), ts[0]["house"], "台帳") if ts else None
+    f = rec.get("first")
+    if f and led and led[0] < f[0]:
+        issues.append(f"初当選の年：{p_['name']} は記事では{f[0]}年だが、台帳に{led[0]}年の在職がある")
+        f = led
+    if not f and led and ts[0]["election_id"] not in FIRST_RANGE:
+        f = led
+    p_["first_elected"], p_["first_house"], p_["first_basis"] = (str(f[0]), f[1], {"選挙歴": "art", "情報欄": "art", "台帳": "doc"}[f[2]]) if f else ("", "", "")
+    p_["prev_job"] = rec.get("prev_job", "")
+
+# ---- 派閥：自民党版（2009年・2026年）の分類を取り込む ----
+# 自民党議員 派閥別名簿（jimin-rekishi の2009年版、jimin-meibo の2026年版）のデータ。
+# どちらもその時点での所属だけが分かっているので、期間ではなく as_of（その日の所属）として入れる。
+FACTION_ORG = {
+    "清和政策研究会": "清和会系", "平成研究会": "平成研系", "宏池会": "宏池会系", "志帥会": "志帥会系",
+    "近未来政治研究会": "近未来系", "為公会": "為公会系", "志公会": "為公会系", "番町政策研究所": "番町研系",
+    "新しい波": "志帥会系", "菅グループ": "無派閥グループ", "石破グループ": "無派閥グループ", "有隣会": "無派閥グループ",
+    "無派閥": "無派閥"}
+LDP_NAME = {"浅田真澄美": "浅田ますみ"}  # 自民党版の表記 → 台帳の表記（同じ人）
+FACTION_PRED = {"志公会": ["為公会"], "志帥会": ["新しい波"]}
+LDP_SETS = [
+    ("ldp_2009.json", "2009-08-30", "自民党衆院議員 派閥別名簿 2009", "https://s2202-3099.github.io/jimin-rekishi/2009/",
+     {"清和会": "清和政策研究会", "平成研": "平成研究会", "宏池会": "宏池会", "近未来": "近未来政治研究会", "為公会": "為公会",
+      "志帥会": "志帥会", "番町研": "番町政策研究所", "二階G": "新しい波", "無派閥": "無派閥"},
+     {"doc": "doc", "art": "art", "est": "est", "none": "none"}, {}),
+    ("ldp_2026.json", "2026-10-15", "自民党議員 派閥別名簿（2026年10月15日現在）", "https://s2202-3099.github.io/jimin-meibo/",
+     {"麻生派": "志公会", "安倍派": "清和政策研究会", "茂木派": "平成研究会", "岸田派": "宏池会", "二階派": "志帥会",
+      "森山派": "近未来政治研究会", "菅G": "菅グループ", "石破G": "石破グループ", "谷垣G": "有隣会", "無派閥": "無派閥"},
+     {"member": "doc", "old": "doc", "left": "doc", "est": "est", "none": "doc"},
+     {"old": "旧派閥（2024年の解散時に所属）", "left": "解散前に退会", "est": "推定", "member": "所属", "none": ""}),
+]
+faction_count = {}
+for fname, as_of, title, url, gmap, bmap, kmap in LDP_SETS:
+    path = os.path.join(W2, fname)
+    if not os.path.exists(path):
+        continue
+    dat = json.load(open(path))
+    src_ = add_source(title, url, "刊行資料")
+    labels = {g[0]: g[1] for g in dat.get("groups", [])}
+    if fname == "ldp_2026.json":
+        labels = {"麻生派": "麻生派（志公会）", "安倍派": "旧安倍派（清和会）", "茂木派": "旧茂木派（平成研究会）",
+                  "岸田派": "旧岸田派（宏池会）", "二階派": "旧二階派（志帥会）", "森山派": "旧森山派（近未来政治研究会）",
+                  "菅G": "旧菅グループ", "石破G": "旧石破グループ", "谷垣G": "旧谷垣グループ（有隣会）", "無派閥": "無派閥"}
+    # その日に在職していた人の中で名前を引く（同姓同名を避ける）
+    vdate = "2009-08-30" if fname == "ldp_2009.json" else "2026-02-08"
+    cand = {}
+    for t in terms:
+        if any(t["start_date"] <= d_ and (not t["end_date"] or t["end_date"] >= d_) for d_ in (vdate, as_of)):
+            pp = P[t["person_id"]]
+            for nm in {pp["name"], soumu.norm(pp["name"])} | {a["alias"] for a in aliases if a.get("_key") == pp["jawiki_title"]}:
+                cand.setdefault((t["house"], nm), set()).add(pp["person_id"])
+    for r in dat["rows"]:
+        nm = LDP_NAME.get(r["n"], r["n"])
+        ids = cand.get((r["h"], nm)) or cand.get((r["h"], soumu.norm(nm))) or set()
+        if len(ids) != 1:
+            issues.append(f"派閥の取り込み（{fname}）：{r['n']} を台帳で一人に決められない（{len(ids)}人）")
+            continue
+        org_name = gmap[r["g"]]
+        if org_name not in oid_of:
+            oid = OBOOK.get(org_name)
+            oid_of[org_name] = oid
+            orgs.append({"org_id": oid, "name": org_name, "kind": "派閥" if "グループ" not in org_name and org_name != "有隣会" else "グループ",
+                         "lineage": FACTION_ORG[org_name], "founded": "", "dissolved": "", "predecessors": "",
+                         "successors": "", "source_id": src_})
+        kind = kmap.get(r.get("k"), "")
+        note = "；".join(filter(None, [f"【{labels.get(r['g'], r['g'])}】", kind, r.get("w", "")]))
+        affs.append({"person_id": next(iter(ids)), "org_id": oid_of[org_name], "start_date": "", "end_date": "",
+                     "as_of": as_of, "role": "", "basis": bmap.get(r.get("k"), "doc"), "source_id": src_, "note": note})
+        faction_count[fname] = faction_count.get(fname, 0) + 1
+for o in orgs:
+    for x in FACTION_PRED.get(o["name"], []):
+        if x in oid_of:
+            o["predecessors"] = ";".join(filter(None, [o["predecessors"], oid_of[x]]))
+            q = next(z for z in orgs if z["org_id"] == oid_of[x])
+            q["successors"] = ";".join(filter(None, [q["successors"], o["org_id"]]))
+
 # ---- 書き出し ----
 def write(name, rows, cols):
     with open(os.path.join(OUT, name), "w", newline="", encoding="utf-8") as f:
@@ -688,15 +774,18 @@ for name, rows in [("aliases.csv", aliases), ("persons.csv", persons), ("orgs.cs
                    ("districts.csv", districts), ("terms.csv", terms), ("affiliations.csv", affs),
                    ("sources.csv", sources)]:
     cols = header(name)
-    if name == "terms.csv" and "note" not in cols:
-        cols.append("note")
+    extra = {"terms.csv": ["note"], "persons.csv": ["first_elected", "first_house", "first_basis", "prev_job"],
+             "affiliations.csv": ["as_of"]}.get(name, [])
+    for c in extra:
+        if c not in cols:
+            cols.insert(cols.index("note") if name == "persons.csv" else (cols.index("role") if name == "affiliations.csv" else len(cols)), c)
     write(name, rows, cols)
 
 missing_birth = [p["name"] for p in persons if not p["birth_date"]]
 missing_kana = [p["name"] for p in persons if not p["name_kana"]]
 report = {"persons": len(persons), "terms": len(terms), "affiliations": len(affs), "orgs": len(orgs),
           "sources": len(sources), "checks": checks, "missing_birth": missing_birth, "missing_kana": missing_kana,
-          "issues": issues, "by_elections": by_count, "san_snapshot": san_snap, "tenure_check": tenure_check, "san_by_elections": by_count_san,
+          "issues": issues, "by_elections": by_count, "factions": faction_count, "san_snapshot": san_snap, "tenure_check": tenure_check, "san_by_elections": by_count_san,
           "san_routes": {f"{n}-{r}": c for (n, r), c in san_count.items()},
           "routes": {n: {k: sum(1 for t in terms if t["election_id"] == f"shu-{n:03d}" and t["route"] == k)
                          for k in ("小選挙区", "比例復活", "比例単独", "比例")} for n in nums}}

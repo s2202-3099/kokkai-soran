@@ -114,11 +114,54 @@ def house_tenure(ib, house="参議院議員"):
             on = bool(re.search(re.escape(house) + r"(?!会長|副会長|団|総会)", val))
             continue
         if on and re.match(r"就任日\d*$", key):
-            start = _date(val.split("<hr>")[-1])
+            start = _date(val.split("<hr>")[0])
         elif on and re.match(r"退任日\d*$", key):
             out.append((start, _date(val)))
             on = False
     return out
+
+
+SHU_YEAR = dict(zip(range(1, 52), [1890, 1892, 1894, 1894, 1898, 1898, 1902, 1903, 1904, 1908, 1912, 1915, 1917, 1920,
+                                    1924, 1928, 1930, 1932, 1936, 1937, 1942, 1946, 1947, 1949, 1952, 1953, 1955, 1958,
+                                    1960, 1963, 1967, 1969, 1972, 1976, 1979, 1980, 1983, 1986, 1990, 1993, 1996, 2000,
+                                    2003, 2005, 2009, 2012, 2014, 2017, 2021, 2024, 2026]))
+SAN_YEAR = dict(zip(range(1, 28), [1947, 1950, 1953, 1956, 1959, 1962, 1965, 1968, 1971, 1974, 1977, 1980, 1983, 1986,
+                                   1989, 1992, 1995, 1998, 2001, 2004, 2007, 2010, 2013, 2016, 2019, 2022, 2025]))
+
+
+def first_win(t, ib):
+    """国政選挙で初めて当選した年と院。選挙歴の表と、情報欄の衆議院議員・参議院議員の就任日のうち早いほう。"""
+    cands = []
+    m = re.search(r"\{\{選挙歴.*?\n\}\}", t, re.S)
+    if m:
+        body = re.sub(r"\[\[(?:[^\]|]*\|)?([^\]]*)\]\]", r"\1", m.group())
+        for line in body.split("\n"):
+            c = [x.strip() for x in line.split("|")]
+            if len(c) < 4 or c[0] != "" or "当" not in c[2] or "無効" in c[2]:
+                continue
+            if c[1] == "衆" and c[3].isdigit() and int(c[3]) in SHU_YEAR:
+                cands.append((SHU_YEAR[int(c[3])], "衆", "選挙歴"))
+            elif c[1] == "参" and c[3].isdigit() and int(c[3]) in SAN_YEAR:
+                cands.append((SAN_YEAR[int(c[3])], "参", "選挙歴"))
+            elif c[1].startswith("補") and ("衆議院" in c[3] or "参議院" in c[3] or c[1] in ("補衆", "補参")):
+                y = re.search(r"(1[89]\d\d|20\d\d)[年/]", line)
+                if y:
+                    cands.append((int(y.group(1)), "参" if "参" in c[3] or c[1] == "補参" else "衆", "選挙歴"))
+    for house, h in (("衆議院議員", "衆"), ("参議院議員", "参")):
+        for s_, _ in house_tenure(ib, house):
+            if s_ and s_[:4].isdigit():
+                cands.append((int(s_[:4]), h, "情報欄"))
+    return min(cands) if cands else None
+
+
+def prev_job(ib):
+    s = field(ib, "前職")
+    s = re.sub(r"<ref[^>]*/>|<ref.*?</ref>|<!--.*?-->", "", s, flags=re.S)
+    s = re.sub(r"\{\{[^{}]*\}\}", "", s)
+    s = clean(s)
+    s = re.sub(r"[\s　]*／[\s　]*", "／", s).strip("／ 　")
+    s = re.sub(r"\n+", "／", s)
+    return s
 
 
 def extract(rec):
@@ -127,5 +170,6 @@ def extract(rec):
     b, bsrc = birth(t, ib)
     return {"title": rec["title"], "pageid": rec["pageid"], "qid": rec.get("qid") or "", "revid": rec.get("revid"),
             "birth": b, "birth_src": bsrc, "kana": kana(t, ib), "sex": sex(t), "birth_pref": birth_pref(ib),
-            "elections": election_rows(t), "san_tenure": house_tenure(ib), "disambiguation": rec.get("disambiguation", False),
+            "elections": election_rows(t), "san_tenure": house_tenure(ib), "first": first_win(t, ib),
+            "prev_job": prev_job(ib), "disambiguation": rec.get("disambiguation", False),
             "length": rec.get("length")}
