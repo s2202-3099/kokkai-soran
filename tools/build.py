@@ -923,6 +923,7 @@ if cab_unmatched:
     issues.append("内閣の役職で台帳に結びつかなかった人（民間からの閣僚・補佐官など）：" + "、".join(cab_unmatched))
 # ---- 派閥：残りの版（自民党版の名簿がない版）を、内閣の記事と本人の記事から当てる ----
 import faction as faction_mod
+import faction_manual
 FAC_SHORT = {"清和政策研究会": "清和会", "平成研究会": "平成研", "近未来政治研究会": "近未来研", "番町政策研究所": "番町研",
              "政策科学研究所": "政策科学研究所"}
 GENERIC = {"清和会", "平成研", "経世会", "宏池会", "志帥会", "番町研", "大勇会", "為公会", "志公会", "新しい波", "水月会", "有隣会",
@@ -1008,7 +1009,42 @@ def snap_at(pid_, day):
     return best
 
 
+# 議員でなくなった時点の所属（派閥の記事の「その他国政選挙落選・引退者」）
+exit_by = {}
+if os.path.exists(_fs):
+    for ex in snapshots_mod.exits(json.load(open(_fs))):
+        pid_ = by_title.get(ex["article"]) or by_title.get((info.get(ex["article"]) or {}).get("title", "")) or unique_person(ex["name"])
+        if pid_:
+            if ex["page"] not in snap_src:
+                snap_src[ex["page"]] = add_source(f"Wikipedia {ex['page']}", "https://ja.wikipedia.org/wiki/" + ex["page"], "wikipedia", ex["revid"])
+            exit_by.setdefault(pid_, []).append({**ex, "source_id": snap_src[ex["page"]]})
+last_end = {}
+for t in terms:
+    e_ = t["end_date"] or "9999"
+    last_end[t["person_id"]] = max(last_end.get(t["person_id"], ""), e_)
+
+
+def exit_at(pid_, day):
+    """議員でなくなった時点の所属を、その日に当てる（8年以内に議員でなくなった人だけ。分裂・合流の前は元の派閥に直す）。"""
+    xs = exit_by.get(pid_, [])
+    end = last_end.get(pid_, "9999")
+    if len(xs) != 1 or end == "9999" or end < day or int(end[:4]) - int(day[:4]) > 8:
+        return None
+    ent = xs[0]["entity"]
+    if ent == "志公会系":
+        ent = "志公会" if end >= "2017-07-01" else ("為公会" if end >= "2006-12-01" else "大勇会")
+    if ent == "近未来政治研究会" and day < "1998-12-01":
+        ent = "政策科学研究所"   # 山崎派は1998年に旧渡辺派から分かれた
+    if ent in ("大勇会", "為公会") and day < "1998-12-01":
+        ent = "宏池会"           # 河野グループは1998年に宮澤派から分かれた
+    lo, hi = faction_mod.ENTITY_SPAN.get(ent, [0, 9999])
+    if ent in ("志帥会", "志公会", "有隣会", "水月会") and not (lo <= int(day[:4]) <= hi):
+        return None              # 結成前の所属は一つに決まらない
+    return ent, xs[0], end
+
+
 snap_conflict = []
+exit_count = {}
 cab_ev = {}
 for ev in cab_evidence:
     cab_ev[(ev["person_id"], ev["day"])] = ev
@@ -1079,6 +1115,9 @@ for n in nums:
                     else:
                         fac_check["disagree"].append(f"{P[pid_]['name']} {vote}：内閣{res}・推定{guess[0]}")
         sn = None if dissolved else snap_at(pid_, vote)
+        mf = faction_manual.MANUAL.get((pid_, vote))
+        if not res and mf:
+            res, basis, why = mf[0], mf[1], f"本人の記事の本文を読んで確かめた（{mf[2]}）" + ("" if mf[1] == "art" else "。推定")
         if not res and sn and sn[0] <= 100:
             res, basis, src_ = sn[1], "doc", sn[2]["source_id"]
             why = f"{sn[2]['title']}（{sn[2]['date']}）で{sn[2]['label']}"
@@ -1095,6 +1134,12 @@ for n in nums:
             why = f"本人の記事の所属政党欄（{gtxt}）から" + ("" if basis == "art" else "推定")
         if res and sn and basis == "doc" and why.startswith("内閣") and sn[1] != res:
             snap_conflict.append(f"{P[pid_]['name']} {vote}：内閣{res}・名簿{sn[1]}（{sn[2]['title']}）")
+        if not res:
+            xa = exit_at(pid_, vote)
+            if xa:
+                res, basis, src_ = xa[0], "est", xa[1]["source_id"]
+                why = f"{xa[1]['page']}の記事で、議員でなくなった時（{xa[2]}）にこの派閥にいた人の一覧にある。推定"
+                exit_count[vote] = exit_count.get(vote, 0) + 1
         if res in ("為公会", "番町政策研究所") and vote >= "2017-07-01":
             res = "志公会"   # 2017年7月、為公会と番町政策研究所（山東派）などが合流して志公会に
         if not res:
@@ -1158,7 +1203,7 @@ missing_birth = [p["name"] for p in persons if not p["birth_date"]]
 missing_kana = [p["name"] for p in persons if not p["name_kana"]]
 report = {"persons": len(persons), "terms": len(terms), "affiliations": len(affs), "orgs": len(orgs),
           "sources": len(sources), "checks": checks, "missing_birth": missing_birth, "missing_kana": missing_kana,
-          "issues": issues, "by_elections": by_count, "factions": faction_count, "posts": len(posts), "kin": len(kin), "faction_stats": fac_stats, "faction_check": fac_check, "snap_conflict": snap_conflict, "san_snapshot": san_snap, "tenure_check": tenure_check, "san_by_elections": by_count_san,
+          "issues": issues, "by_elections": by_count, "factions": faction_count, "posts": len(posts), "kin": len(kin), "faction_stats": fac_stats, "faction_check": fac_check, "snap_conflict": snap_conflict, "exit_count": exit_count, "san_snapshot": san_snap, "tenure_check": tenure_check, "san_by_elections": by_count_san,
           "san_routes": {f"{n}-{r}": c for (n, r), c in san_count.items()},
           "routes": {n: {k: sum(1 for t in terms if t["election_id"] == f"shu-{n:03d}" and t["route"] == k)
                          for k in ("小選挙区", "比例復活", "比例単独", "比例")} for n in nums}}

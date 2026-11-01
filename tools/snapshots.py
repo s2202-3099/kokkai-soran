@@ -86,3 +86,27 @@ def collect(src):
                 r["revid"], r["page"] = rec["revid"], rec["title"]
                 out.append(r)
     return out
+
+
+EXIT_ARTICLES = {"清和政策研究会": "清和政策研究会", "平成研究会": "平成研究会", "宏池会": "宏池会", "志帥会": "志帥会",
+                 "近未来政治研究会": "近未来政治研究会", "番町政策研究所": "番町政策研究所", "志公会": "志公会系",
+                 "有隣会": "有隣会", "水月会": "水月会"}
+
+
+def exits(src):
+    """派閥の記事の「その他国政選挙落選・引退者」（議員でなくなった時点でその派閥にいた人）。[{article, name, entity, page, revid}]"""
+    out = []
+    for art, ent in EXIT_ARTICLES.items():
+        rec = src.get(art)
+        if not rec:
+            continue
+        t = rec["text"]
+        m = re.search(r"^=+\s*その他国政選挙落選・引退者\s*=+\s*$", t, re.M)
+        if not m:
+            continue
+        nxt = re.search(r"^=+[^=\n]+=+\s*$", t[m.end():], re.M)
+        sec = t[m.end(): m.end() + (nxt.start() if nxt else len(t))]
+        for mm in re.finditer(r"^\*\s*'*\[\[([^\]|]+)(?:\|([^\]]+))?\]\]'*\s*[※◆●†]", sec, re.M):
+            out.append({"article": mm.group(1).strip().replace("_", " "), "name": (mm.group(2) or mm.group(1)).strip(),
+                        "entity": ent, "page": rec["title"], "revid": rec["revid"]})
+    return out
