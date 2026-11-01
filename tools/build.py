@@ -709,12 +709,15 @@ LDP_SETS = [
      {"old": "旧派閥（2024年の解散時に所属）", "left": "解散前に退会", "est": "推定", "member": "所属", "none": ""}),
 ]
 faction_count = {}
+ldp_resolved = {}   # fname -> {自民党版の名前: person_id}
+ldp_src = {}
 for fname, as_of, title, url, gmap, bmap, kmap in LDP_SETS:
     path = os.path.join(W2, fname)
     if not os.path.exists(path):
         continue
     dat = json.load(open(path))
     src_ = add_source(title, url, "刊行資料")
+    ldp_src[fname] = src_
     labels = {g[0]: g[1] for g in dat.get("groups", [])}
     if fname == "ldp_2026.json":
         labels = {"麻生派": "麻生派（志公会）", "安倍派": "旧安倍派（清和会）", "茂木派": "旧茂木派（平成研究会）",
@@ -734,6 +737,7 @@ for fname, as_of, title, url, gmap, bmap, kmap in LDP_SETS:
         if len(ids) != 1:
             issues.append(f"派閥の取り込み（{fname}）：{r['n']} を台帳で一人に決められない（{len(ids)}人）")
             continue
+        ldp_resolved.setdefault(fname, {})[r["n"]] = next(iter(ids))
         org_name = gmap[r["g"]]
         if org_name not in oid_of:
             oid = OBOOK.get(org_name)
@@ -746,6 +750,76 @@ for fname, as_of, title, url, gmap, bmap, kmap in LDP_SETS:
         affs.append({"person_id": next(iter(ids)), "org_id": oid_of[org_name], "start_date": "", "end_date": "",
                      "as_of": as_of, "role": "", "basis": bmap.get(r.get("k"), "doc"), "source_id": src_, "note": note})
         faction_count[fname] = faction_count.get(fname, 0) + 1
+# ---- 役職と親族：自民党版（2009年・2026年）から ----
+# 役職は「その日に就いていた」ことだけを as_of で持つ（就任日・退任日はまだ調べていない）。
+POST_ASOF = {"ldp_2009.json": {"内閣": "2009-08-30", "副大臣": "2009-08-30", "政務官": "2009-08-30",
+                               "党執行部": "2009-08-30", "党執行部後": "2009-09-29"},
+             "ldp_2026.json": {"内閣": "2026-10-15", "副大臣": "2026-09-18", "政務官": "2026-09-18",
+                               "党執行部": "2026-09-16", "党幹部": "2026-10-15", "衆院": "2026-10-05", "参院": "2026-10-21"}}
+POST_BODY = {"ldp_2009.json": {"内閣": "麻生内閣", "副大臣": "麻生内閣", "政務官": "麻生内閣",
+                              "党執行部": "自由民主党（麻生総裁）", "党執行部後": "自由民主党（谷垣総裁）"},
+             "ldp_2026.json": {"内閣": "第2次高市改造内閣", "副大臣": "第2次高市改造内閣", "政務官": "第2次高市改造内閣",
+                              "党執行部": "自由民主党（高市総裁）", "党幹部": "自由民主党（高市総裁）",
+                              "衆院": "衆議院", "参院": "参議院"}}
+POST_KIND = {"内閣": "閣僚", "副大臣": "副大臣", "政務官": "大臣政務官", "党執行部": "党執行部", "党執行部後": "党執行部",
+             "党幹部": "党の幹部", "衆院": "衆議院の役職", "参院": "参議院の役職"}
+by_name = {}
+for p_ in persons:
+    for nm in {p_["name"], soumu.norm(p_["name"])}:
+        by_name.setdefault(nm, set()).add(p_["person_id"])
+for a in aliases:
+    for nm in {a["alias"], soumu.norm(a["alias"])}:
+        by_name.setdefault(nm, set()).add(a.get("person_id") or pid_of.get(a["_key"]))
+
+
+def unique_person(name):
+    ids = by_name.get(name) or by_name.get(soumu.norm(name)) or set()
+    return next(iter(ids)) if len(ids) == 1 else None
+
+
+posts, kin, kin_checked, post_unmatched = [], {}, {}, []
+for fname, *_ in LDP_SETS:
+    path = os.path.join(W2, fname)
+    if not os.path.exists(path):
+        continue
+    dat, res, src_ = json.load(open(path)), ldp_resolved.get(fname, {}), ldp_src[fname]
+    for key, title, items in dat["posts"]:
+        body = POST_BODY[fname][key]
+        for role, name, note, _inr in items:
+            pid_ = res.get(name) or unique_person(LDP_NAME.get(name, name))
+            if not pid_:
+                post_unmatched.append(f"{name}（{role}）")
+                continue
+            post = role
+            if key == "副大臣" and not role.endswith("副大臣"):
+                base, paren = re.match(r"([^（]*)(（.*）)?", role).groups()
+                post = base + "副大臣" + (paren or "")
+            if key == "政務官" and not role.endswith("政務官"):
+                base, paren = re.match(r"([^（]*)(（.*）)?", role).groups()
+                post = base + "大臣政務官" + (paren or "")
+            posts.append({"person_id": pid_, "kind": POST_KIND[key], "post": post, "body": body, "start_date": "",
+                          "end_date": "", "as_of": POST_ASOF[fname][key], "source_id": src_, "note": note})
+    for name, ks in dat["kin"].items():
+        pid_ = res.get(name)
+        if not pid_:
+            continue
+        for k in ks:
+            other = unique_person(k["o"]) if k.get("nat") else None
+            kin[(pid_, k["o"])] = {"person_id": pid_, "other_person_id": other or "", "other_name": k["o"],
+                                   "relation": k["rel"], "category": k["cat"], "line": k.get("line", ""),
+                                   "degree": k.get("deg") if k.get("deg") is not None else "", "other_title": k.get("t", ""),
+                                   "national": "1" if k.get("nat") else "", "source_id": src_}
+    as_of = "2009-08-30" if fname == "ldp_2009.json" else "2026-10-15"
+    for name, st in dat.get("kinstatus", {}).items():
+        if st == "checked" and res.get(name):
+            kin_checked[res[name]] = max(kin_checked.get(res[name], ""), as_of)
+kin = sorted(kin.values(), key=lambda k: (k["person_id"], k["degree"] if k["degree"] != "" else 99))
+posts.sort(key=lambda r: r["as_of"])  # 同じ時点の中は自民党版の並び（内閣の序列など）のまま
+for p_ in persons:
+    p_["kin_checked"] = kin_checked.get(p_["person_id"], "")
+if post_unmatched:
+    issues.append("役職の取り込みで台帳に結びつかなかった人（官僚・台帳の範囲外など）：" + "、".join(post_unmatched))
+
 for o in orgs:
     for x in FACTION_PRED.get(o["name"], []):
         if x in oid_of:
@@ -772,20 +846,23 @@ orgs.sort(key=lambda r: r["org_id"])
 sources.sort(key=lambda r: r["source_id"])
 for name, rows in [("aliases.csv", aliases), ("persons.csv", persons), ("orgs.csv", orgs), ("elections.csv", elections),
                    ("districts.csv", districts), ("terms.csv", terms), ("affiliations.csv", affs),
-                   ("sources.csv", sources)]:
+                   ("sources.csv", sources), ("posts.csv", posts), ("kin.csv", kin)]:
     cols = header(name)
-    extra = {"terms.csv": ["note"], "persons.csv": ["first_elected", "first_house", "first_basis", "prev_job"],
-             "affiliations.csv": ["as_of"]}.get(name, [])
+    extra = {"terms.csv": ["note"], "persons.csv": ["first_elected", "first_house", "first_basis", "prev_job", "kin_checked"],
+             "affiliations.csv": ["as_of"], "posts.csv": ["kind", "as_of", "note"], "kin.csv": ["national"]}.get(name, [])
     for c in extra:
         if c not in cols:
-            cols.insert(cols.index("note") if name == "persons.csv" else (cols.index("role") if name == "affiliations.csv" else len(cols)), c)
+            pos = {"persons.csv": lambda: cols.index("note"), "affiliations.csv": lambda: cols.index("role"),
+                   "posts.csv": lambda: (cols.index("post") if c == "kind" else (cols.index("source_id") if c == "as_of" else len(cols))),
+                   "kin.csv": lambda: cols.index("source_id")}.get(name, lambda: len(cols))()
+            cols.insert(pos, c)
     write(name, rows, cols)
 
 missing_birth = [p["name"] for p in persons if not p["birth_date"]]
 missing_kana = [p["name"] for p in persons if not p["name_kana"]]
 report = {"persons": len(persons), "terms": len(terms), "affiliations": len(affs), "orgs": len(orgs),
           "sources": len(sources), "checks": checks, "missing_birth": missing_birth, "missing_kana": missing_kana,
-          "issues": issues, "by_elections": by_count, "factions": faction_count, "san_snapshot": san_snap, "tenure_check": tenure_check, "san_by_elections": by_count_san,
+          "issues": issues, "by_elections": by_count, "factions": faction_count, "posts": len(posts), "kin": len(kin), "san_snapshot": san_snap, "tenure_check": tenure_check, "san_by_elections": by_count_san,
           "san_routes": {f"{n}-{r}": c for (n, r), c in san_count.items()},
           "routes": {n: {k: sum(1 for t in terms if t["election_id"] == f"shu-{n:03d}" and t["route"] == k)
                          for k in ("小選挙区", "比例復活", "比例単独", "比例")} for n in nums}}

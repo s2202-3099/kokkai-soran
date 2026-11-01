@@ -95,6 +95,16 @@ header.page{display:flex;flex-direction:column;gap:10px}
 .seg button{font-size:13px;padding:5px 14px;border:0;background:transparent;cursor:pointer;color:var(--muted)}
 .seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
 td.job{max-width:18em;overflow:hidden;text-overflow:ellipsis}
+.posts{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px 32px}
+.pgroup{display:flex;flex-direction:column;gap:6px;min-width:0}
+.pgroup h3 .sub{font-family:var(--body);font-weight:500;font-size:12px;color:var(--muted)}
+.pgroup dl{margin:0;display:flex;flex-direction:column}
+.pgroup dl div{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;padding:4px 0;border-bottom:1px solid var(--soft);font-size:14px}
+.pgroup dt{color:var(--muted);overflow-wrap:anywhere}
+.pgroup dd{margin:0;text-align:right}
+.pgroup dd .sub{font-size:12px;color:var(--muted)}
+.kin.nat{font-weight:700}
+.kin .sub{font-size:11px;color:var(--muted)}
 /* 名簿の表 */
 .controls{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center}
 .controls input{padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:var(--surface);min-width:0;flex:0 1 220px}
@@ -197,12 +207,18 @@ function age(birth, at){
 async function load(){
   const r = await fetch("site.json");
   const j = await r.json();
-  const P = new Map(j.persons.map(p=>[p[0],{id:p[0],name:p[1],kana:p[2],birth:p[3],death:p[4],sex:p[5],pref:p[6],title:p[7],qid:p[8],first:p[9],firstHouse:p[10],prevJob:p[11],terms:[],affs:[],alias:[]}]));
+  const P = new Map(j.persons.map(p=>[p[0],{id:p[0],name:p[1],kana:p[2],birth:p[3],death:p[4],sex:p[5],pref:p[6],title:p[7],qid:p[8],first:p[9],firstHouse:p[10],prevJob:p[11],kinChecked:p[12],terms:[],affs:[],alias:[],posts:[],kin:[],kinOf:[]}]));
   const E = new Map(j.elections.map(e=>[e[0],{id:e[0],house:e[1],n:e[2],date:e[3],kind:e[4],seats:e[5],src:e[6]}]));
   const T = j.terms.map(t=>({id:t[0],pid:t[1],house:t[2],eid:t[3],did:t[4],route:t[5],start:t[6],end:t[7],reason:t[8],basis:t[9],src:t[10],note:t[11]}));
   for(const t of T) P.get(t.pid).terms.push(t);
   for(const a of j.affs) P.get(a[0]).affs.push({org:a[1],start:a[2],end:a[3],basis:a[4],src:a[5],note:a[6],asOf:a[7]});
   for(const a of j.aliases) P.get(a[0])?.alias.push(a[1]);
+  const POSTS=[];
+  for(const r of j.posts){ const x={pid:r[0],kind:r[1],post:r[2],body:r[3],asOf:r[4],note:r[5],src:r[6]}; P.get(r[0]).posts.push(x); POSTS.push(x); }
+  for(const k of j.kin){
+    const x={pid:k[0],other:k[1],name:k[2],rel:k[3],cat:k[4],line:k[5],deg:k[6],title:k[7],nat:k[8]==="1",src:k[9]};
+    P.get(k[0]).kin.push(x); if(k[1]&&P.get(k[1])) P.get(k[1]).kinOf.push(x);
+  }
   for(const p of P.values()){ p.terms.sort((a,b)=>a.start<b.start?-1:1); p.affs.sort((a,b)=>a.start<b.start?-1:1); }
   const distOrder = new Map(Object.keys(j.districts).map((k,i)=>[k,i]));
   const versions = [...E.values()].filter(e=>e.house==="衆").sort((a,b)=>a.date<b.date?-1:1);
@@ -211,7 +227,7 @@ async function load(){
   const span = {};
   for(const t of T) if(t.house==="参" && (t.route==="選挙区"||t.route==="比例")){
     const s = span[t.eid] ||= [t.start,t.end]; if(t.start<s[0]) s[0]=t.start; if(t.end>s[1]) s[1]=t.end; }
-  S = {P,E,T,orgs:j.orgs,dist:j.districts,distOrder,versions,span,src:j.sources,built:j.built};
+  S = {POSTS,P,E,T,orgs:j.orgs,dist:j.districts,distOrder,versions,span,src:j.sources,built:j.built};
   $("#built").textContent = ` 台帳の取得日 ${sdate(j.built)}。`;
 }
 
@@ -230,6 +246,16 @@ function factionAt(p, v){
   if(!a) return null;
   const label = (a.note.match(/【(.+?)】/)||[])[1] || S.orgs[a.org][0];
   return {a, label, kind:(a.note.match(/】；(推定|旧派閥[^；]*|解散前に退会)/)||[])[1]||"", asOf:a.asOf};
+}
+const POST_RANK = {"閣僚":0,"党執行部":1,"副大臣":2,"衆議院の役職":3,"参議院の役職":3,"大臣政務官":4,"党の幹部":5};
+const inVer = (d, v) => d && d>=v.date && (!v.next || d<v.next.date);
+function postsIn(p, v){ return p.posts.filter(x=>inVer(x.asOf,v)).sort((a,b)=>POST_RANK[a.kind]-POST_RANK[b.kind]); }
+function kinCell(p){
+  if(!p.kin.length) return p.kinChecked ? `<span class="sub">なし</span>` : "";
+  const nat=p.kin.filter(k=>k.nat), loc=p.kin.filter(k=>!k.nat);
+  const rels=a=>[...new Set(a.map(k=>k.rel))].slice(0,3).join("・");
+  return nat.length ? `<span class="kin nat" title="${esc(nat.map(k=>k.rel+" "+k.name).join("、"))}">${esc(rels(nat))}</span>`
+    : `<span class="kin" title="${esc(loc.map(k=>k.rel+" "+k.name+"（"+k.title+"）").join("、"))}">${esc(rels(loc))}<span class="sub">（地方など）</span></span>`;
 }
 const facVersions = () => new Set(S.versions.filter(v=>[...S.P.values()].some(p=>factionAt(p,v))).map(v=>v.id));
 let FACV;
@@ -336,6 +362,8 @@ function renderVersion(v){
     </header>
     ${houseBlock("shu","衆議院",shu,v.seats,"投票日の党派")}
     ${houseBlock("san","参議院",san,ss.seats,`${groupsTxt}・当選時の党派`)}
+    ${postsSection(v, [...shu,...san])}
+    ${kinSection(v, [...shu,...san])}
     <section aria-labelledby="eh"><h2 id="eh">その後の異動</h2>
       <p class="note">この投票日から${v.next?"次の版の投票日まで":"いままで"}の、辞職・死去などの欠員と、補欠選挙・繰上当選で入った議員です。</p>
       ${eventsBlock(D, v.next?.date)}
@@ -368,11 +396,15 @@ function tableBlock(key, rows, D, comp, v){
     const facCell = f ? `${esc(f.label)}${f.kind?`<div class="sub">${esc(f.kind.replace(/（.*$/,""))}</div>`:""}` : (ldp ? `<span class="sub">${FACV.has(v.id)?"記載なし":"未調査"}</span>` : "");
     const first = r.p.first ? `${r.p.first}${r.p.firstHouse && r.p.firstHouse!==(isShu?"衆":"参")?`<span class="sub">（${r.p.firstHouse}）</span>`:""}` : `<span class="sub">不明</span>`;
     const job = r.p.prevJob || "";
+    const ps = postsIn(r.p, v);
+    const postCell = ps.length ? `${esc(ps[0].post)}${ps.length>1?`<span class="sub"> ほか${ps.length-1}</span>`:""}` : "";
     return `<tr data-org="${esc(r.org||"")}" data-q="${esc(r.p.name+r.p.kana.replace(/\s/g,"")+(S.dist[r.t.did]||"")+(f?f.label:"")+job)}">
       <td><a href="#${r.p.id}">${esc(r.p.name)}</a><div class="sub">${esc(r.p.kana)}</div></td>
       <td class="r">${age(r.p.birth,D)}</td>
       <td><span class="pty"><i class="sw" style="${comp.style.get(r.org||"無所属")}"></i>${esc(org)}</span>${sub?`<div class="sub">${sub}</div>`:""}</td>
       <td>${facCell}</td>
+      <td>${postCell}</td>
+      <td>${kinCell(r.p)}</td>
       <td>${esc(S.dist[r.t.did]||"")}</td>${grp}
       <td>${esc(routeLabel(r.t))} ${tags}</td>
       <td class="r">${winsBefore(r.p, isShu?"衆":"参", D)}</td>
@@ -383,7 +415,7 @@ function tableBlock(key, rows, D, comp, v){
       <input type="search" id="f-${key}" placeholder="名簿を絞り込む（名前・選挙区・派閥・前職）" aria-label="${isShu?"衆議院":"参議院"}の名簿を絞り込む">
       <div class="chips" role="group" aria-label="党派で絞り込む">${comp.groups.map(g=>`<button class="chip" type="button" data-for="${key}" data-org="${esc(g.org||"")}" aria-pressed="false"><i class="sw" style="${comp.style.get(g.org||"無所属")}"></i>${esc(g.name)}</button>`).join("")}</div>
     </div>
-    <div class="tablebox"><table id="t-${key}"><thead><tr><th>氏名</th><th class="r">年齢</th><th>党派</th><th>派閥</th><th>選挙区</th>${isShu?"":"<th>改選年</th>"}<th>当選の経路</th><th class="r" title="台帳の範囲での回数">当選回数</th><th class="r">初当選</th><th>前職</th></tr></thead><tbody>${body}</tbody></table></div>`;
+    <div class="tablebox"><table id="t-${key}"><thead><tr><th>氏名</th><th class="r">年齢</th><th>党派</th><th>派閥</th><th>役職</th><th title="国会議員の親族がいれば濃い字で">親族</th><th>選挙区</th>${isShu?"":"<th>改選年</th>"}<th>当選の経路</th><th class="r" title="台帳の範囲での回数">当選回数</th><th class="r">初当選</th><th>前職</th></tr></thead><tbody>${body}</tbody></table></div>`;
 }
 function routeLabel(t){ return t.route==="比例" && t.house==="衆" ? "比例（復活か単独か未判明）" : t.route; }
 function bindTables(){
@@ -455,6 +487,8 @@ function renderPerson(p){
     ${p.prevJob?`<section aria-labelledby="jh"><h2 id="jh">前職</h2><p>${esc(p.prevJob).replace(/／/g,"<br>")}</p><p class="note">本人の記事の情報欄による。</p></section>`:""}
     <section aria-labelledby="th"><h2 id="th">在職の流れ</h2>${timeline(p)}</section>
     ${factionList(p)}
+    ${postList(p)}
+    ${kinList(p)}
     <section aria-labelledby="rh"><h2 id="rh">在職</h2>
       <div class="tablebox"><table><thead><tr><th>期間</th><th>院</th><th>選挙</th><th>選挙区</th><th>経路</th><th>党派（当選時）</th><th>根拠</th></tr></thead><tbody>${rows}</tbody></table></div>
     </section>
@@ -463,7 +497,49 @@ function renderPerson(p){
     <section aria-labelledby="sh"><h2 id="sh">出典</h2>
       <div class="srcs">${srcIds.map(id=>{const s=S.src[id]; if(!s) return ""; return `<span><a href="${esc(s[1])}" target="_blank" rel="noopener">${esc(s[0])}</a> <small>${s[2]?"版 "+esc(s[2])+" ・ ":""}${sdate(s[3])}取得</small></span>`;}).join("")}</div>
     </section>
-    <section class="caveat note"><p>当選回数と在職は、台帳に入っている範囲（衆議院は1996年、参議院は1992年の選挙から）のものです。経歴・親族・役職はこれから入れます。</p></section>`;
+    <section class="caveat note"><p>当選回数と在職は、台帳に入っている範囲（衆議院は1996年、参議院は1992年の選挙から）のものです。派閥・役職・親族は、いまは自民党版の名簿（2009年・2026年）の分だけです。</p></section>`;
+}
+function postsSection(v, rows){
+  // 台帳の並び（自民党版の序列）のまま。版の投票日に在職していない人（落選・引退した副大臣など）も載せる
+  const byP=new Map(rows.map(r=>[r.p.id,r]));
+  const items=S.POSTS.filter(x=>inVer(x.asOf,v)).map(x=>{ const r=byP.get(x.pid); return {...x,p:S.P.get(x.pid),org:r?r.org:null,out:!r}; });
+  if(!items.length) return "";
+  const groups=new Map();
+  for(const it of items){ const k=`${it.kind}|${it.body}|${it.asOf}`; if(!groups.has(k)) groups.set(k,[]); groups.get(k).push(it); }
+  const keys=[...groups.keys()].sort((a,b)=>(POST_RANK[a.split("|")[0]]-POST_RANK[b.split("|")[0]])||(a.split("|")[2]<b.split("|")[2]?-1:1));
+  return `<section aria-labelledby="ph"><h2 id="ph">内閣と党の役職</h2>
+    <div class="posts">${keys.map(k=>{ const [kind,body,asOf]=k.split("|"); const its=groups.get(k);
+      return `<div class="pgroup"><h3>${esc(kind)}<span class="sub"> ${esc(body)} ・ ${sdate(asOf)}時点</span></h3>
+        <dl>${its.map(it=>`<div><dt>${esc(it.post)}</dt><dd><a href="#${it.p.id}">${esc(it.p.name)}</a>${it.org&&S.orgs[it.org][0]!=="自由民主党"?`<span class="sub">（${esc(pname(S.orgs[it.org][0]))}）</span>`:""}${it.out?`<span class="sub">（この版の議員ではない）</span>`:""}</dd></div>`).join("")}</dl></div>`;}).join("")}</div>
+    <p class="note">自民党版の名簿から取り込んだものです（2009年版・2026年版のみ）。就任日・退任日はまだ調べておらず、表の時点で就いていた役職です。</p></section>`;
+}
+function kinSection(v, rows){
+  const here=new Set(rows.map(r=>r.p.id)), pairs=[], seen=new Set();
+  for(const r of rows) for(const k of r.p.kin) if(k.other && here.has(k.other)){
+    const key=[r.p.id,k.other].sort().join("|"); if(seen.has(key)) continue; seen.add(key); pairs.push([r.p,k]); }
+  const checked=rows.filter(r=>r.p.kinChecked).length;
+  if(!checked) return "";
+  const withNat=rows.filter(r=>r.p.kin.some(k=>k.nat)).length;
+  return `<section aria-labelledby="kh"><h2 id="kh">親族でつながる議員</h2>
+    <p class="note">親族を調べ終えた議員は${checked}人（自民党版の名簿の分）で、そのうち${withNat}人に国会議員の親族がいます。この版の議員どうしの親族関係は次のとおりです。</p>
+    <div class="events">${pairs.length?pairs.map(([p,k])=>`<div class="ev"><span class="d"><a href="#${p.id}">${esc(p.name)}</a></span><span class="k">${esc(k.rel)}</span><span class="d"><a href="#${k.other}">${esc(S.P.get(k.other).name)}</a> <span class="note">${esc(k.title)}</span></span></div>`).join(""):`<p class="note">この版の中で親族どうしの議員はいません。</p>`}</div></section>`;
+}
+function postList(p){
+  if(!p.posts.length) return "";
+  const ps=p.posts.slice().sort((a,b)=>(a.asOf<b.asOf?-1:a.asOf>b.asOf?1:POST_RANK[a.kind]-POST_RANK[b.kind]));
+  return `<section aria-labelledby="poh"><h2 id="poh">役職</h2>
+    <div class="tablebox"><table><thead><tr><th>時点</th><th>役職</th><th>内閣・党・院</th><th>注記</th></tr></thead><tbody>${ps.map(x=>`<tr><td class="num">${sdate(x.asOf)}</td><td>${esc(x.post)}</td><td>${esc(x.body)}</td><td><span class="sub" style="white-space:normal">${esc(x.note)}</span></td></tr>`).join("")}</tbody></table></div>
+    <p class="note">自民党版の名簿（2009年・2026年）の時点で就いていた役職です。ほかの時期の役職はこれから入れます。</p></section>`;
+}
+function kinList(p){
+  if(!p.kin.length && !p.kinOf.length) return p.kinChecked ? `<section aria-labelledby="kih"><h2 id="kih">親族</h2><p class="note">政治家の親族は見つかっていません（自民党版の名簿で${sdate(p.kinChecked)}時点に確認）。</p></section>` : "";
+  const ks=p.kin.slice().sort((a,b)=>(+a.deg||9)-(+b.deg||9));
+  const kind=k=>[k.cat, k.line, k.deg!==""?`${k.deg}親等`:""].filter(Boolean).join("・");
+  const rev=p.kinOf.filter(k=>!p.kin.some(m=>m.other===k.pid));
+  return `<section aria-labelledby="kih"><h2 id="kih">親族</h2>
+    ${ks.length?`<div class="tablebox"><table><thead><tr><th>続柄</th><th>名前</th><th>肩書</th><th>区分</th></tr></thead><tbody>${ks.map(k=>`<tr><td>${esc(k.rel)}</td><td>${k.other?`<a href="#${k.other}">${esc(k.name)}</a>`:esc(k.name)}${k.nat?` <span class="tag">国会</span>`:""}</td><td>${esc(k.title)}</td><td><span class="sub">${esc(kind(k))}</span></td></tr>`).join("")}</tbody></table></div>`:""}
+    ${rev.length?`<p class="note">この人を親族に挙げている議員：${rev.map(k=>`<a href="#${k.pid}">${esc(S.P.get(k.pid).name)}</a>（${esc(k.name)}の${esc(k.rel)}）`).join("、")}</p>`:""}
+    <p class="note">続柄は本人から見たもの。自民党版の名簿（${p.kinChecked?sdate(p.kinChecked)+"時点":"2009年・2026年"}）によります。</p></section>`;
 }
 function factionList(p){
   const fs=p.affs.filter(a=>isFaction(a.org)).sort((a,b)=>a.asOf<b.asOf?-1:1);
