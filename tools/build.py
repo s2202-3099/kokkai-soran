@@ -878,7 +878,11 @@ OFFICER_POSTS = [("自由民主党幹事長", "幹事長", "党執行部", "自�
 OFFICER_FIX = {("2014-12-14", "自由民主党総務会長"): ("二階俊博", "本人の記事の本文（2014年9月、6年ぶりに総務会長に就任）"),
                ("2021-10-31", "自由民主党政務調査会長"): ("高市早苗", "本人の記事の本文（2021年10月1日、政務調査会長に再就任）"),
                ("2026-02-08", "自由民主党政務調査会長"): ("小林鷹之", "本人の記事の継承表（第64代、2025年〜現職）"),
-               ("2026-02-08", "自由民主党幹事長"): ("鈴木俊一 (衆議院議員)", "本人の記事の継承表（第57代、2025年〜現職）")}
+               ("2026-02-08", "自由民主党幹事長"): ("鈴木俊一 (衆議院議員)", "本人の記事の継承表（第57代、2025年〜現職）"),
+               # たけさんの指摘（2026-11-02）を受け、本人の記事の本文で確かめたもの
+               ("1996-10-20", "自由民主党総務会長"): ("塩川正十郎", "本人の記事の本文（1996年の総選挙で「現職の党総務会長ながら落選」）"),
+               ("2024-10-27", "自由民主党総務会長"): ("鈴木俊一 (衆議院議員)", "本人の記事の本文（2024年9月30日、再び総務会長に就任）"),
+               ("2026-02-08", "自由民主党選挙対策委員長"): ("古屋圭司", "本人の記事の本文（2025年10月7日、選挙対策委員長に就任）")}
 off_unresolved = []
 off_path = os.path.join(W2, "officers.json")
 if os.path.exists(off_path):
@@ -959,6 +963,52 @@ def fac_org(entity, src_):
     return oid_of[name]
 
 
+# その時点の名簿（総裁選の推薦人一覧、派閥の記事の時点つきの構成表）
+import snapshots as snapshots_mod
+from datetime import date as _date
+snap_by = {}
+snap_src = {}
+_fs = os.path.join(W2, "fac_src.json")
+if os.path.exists(_fs):
+    for sn in snapshots_mod.collect(json.load(open(_fs))):
+        pid_ = by_title.get(sn["article"]) or by_title.get((info.get(sn["article"]) or {}).get("title", "")) or unique_person(sn["name"])
+        if not pid_:
+            continue
+        y_ = int(sn["date"][:4])
+        if sn["kind"] == "派閥の構成":
+            ent = sn["label"]
+        else:
+            c = faction_mod.lookup(sn["label"], y_)
+            if not c:
+                continue
+            ent = c[0][0]
+        if sn["page"] not in snap_src:
+            snap_src[sn["page"]] = add_source(f"Wikipedia {sn['page']}", "https://ja.wikipedia.org/wiki/" + sn["page"], "wikipedia", sn["revid"])
+        snap_by.setdefault(pid_, []).append({**sn, "entity": ent, "source_id": snap_src[sn["page"]]})
+
+
+def snap_at(pid_, day):
+    """day にいちばん近い、およそ16か月以内の名簿。派閥の合流をまたぐときは合流先に直す。"""
+    best = None
+    for sn in snap_by.get(pid_, []):
+        gap = abs((_date.fromisoformat(sn["date"]) - _date.fromisoformat(day)).days)
+        if gap > 480:
+            continue
+        ent = sn["entity"]
+        if ent == "政策科学研究所" and day >= "1999-03-18":
+            ent = "志帥会"
+        if ent in ("為公会", "番町政策研究所") and sn["date"] < "2017-07-01" <= day:
+            ent = "志公会"
+        if ent == "志公会" and day < "2017-07-01":
+            continue
+        if ent == "宏池会（谷垣派系）" and day >= "2008-05-01":
+            ent = "宏池会"
+        if best is None or gap < best[0]:
+            best = (gap, ent, sn)
+    return best
+
+
+snap_conflict = []
 cab_ev = {}
 for ev in cab_evidence:
     cab_ev[(ev["person_id"], ev["day"])] = ev
@@ -1028,9 +1078,23 @@ for n in nums:
                         fac_check["agree"] += 1
                     else:
                         fac_check["disagree"].append(f"{P[pid_]['name']} {vote}：内閣{res}・推定{guess[0]}")
+        sn = None if dissolved else snap_at(pid_, vote)
+        if not res and sn and sn[0] <= 100:
+            res, basis, src_ = sn[1], "doc", sn[2]["source_id"]
+            why = f"{sn[2]['title']}（{sn[2]['date']}）で{sn[2]['label']}"
+        elif not res and guess and guess[2] == "art":
+            res, basis = guess[0], "art"
+            why = f"本人の記事の所属政党欄（{gtxt}）から"
+            if sn and sn[1] != res:
+                snap_conflict.append(f"{P[pid_]['name']} {vote}：記事{res}・名簿{sn[1]}（{sn[2]['title']}）")
+        elif not res and sn:
+            res, basis, src_ = sn[1], "est", sn[2]["source_id"]
+            why = f"{sn[2]['title']}（{sn[2]['date']}）で{sn[2]['label']}。投票日とは{sn[0]}日離れている"
         if not res and guess:
             res, basis = guess[0], guess[2]
             why = f"本人の記事の所属政党欄（{gtxt}）から" + ("" if basis == "art" else "推定")
+        if res and sn and basis == "doc" and why.startswith("内閣") and sn[1] != res:
+            snap_conflict.append(f"{P[pid_]['name']} {vote}：内閣{res}・名簿{sn[1]}（{sn[2]['title']}）")
         if res in ("為公会", "番町政策研究所") and vote >= "2017-07-01":
             res = "志公会"   # 2017年7月、為公会と番町政策研究所（山東派）などが合流して志公会に
         if not res:
@@ -1094,7 +1158,7 @@ missing_birth = [p["name"] for p in persons if not p["birth_date"]]
 missing_kana = [p["name"] for p in persons if not p["name_kana"]]
 report = {"persons": len(persons), "terms": len(terms), "affiliations": len(affs), "orgs": len(orgs),
           "sources": len(sources), "checks": checks, "missing_birth": missing_birth, "missing_kana": missing_kana,
-          "issues": issues, "by_elections": by_count, "factions": faction_count, "posts": len(posts), "kin": len(kin), "faction_stats": fac_stats, "faction_check": fac_check, "san_snapshot": san_snap, "tenure_check": tenure_check, "san_by_elections": by_count_san,
+          "issues": issues, "by_elections": by_count, "factions": faction_count, "posts": len(posts), "kin": len(kin), "faction_stats": fac_stats, "faction_check": fac_check, "snap_conflict": snap_conflict, "san_snapshot": san_snap, "tenure_check": tenure_check, "san_by_elections": by_count_san,
           "san_routes": {f"{n}-{r}": c for (n, r), c in san_count.items()},
           "routes": {n: {k: sum(1 for t in terms if t["election_id"] == f"shu-{n:03d}" and t["route"] == k)
                          for k in ("小選挙区", "比例復活", "比例単独", "比例")} for n in nums}}
