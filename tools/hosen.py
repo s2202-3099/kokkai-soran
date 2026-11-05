@@ -93,9 +93,9 @@ def extract(text, heading=r"補欠(?:選挙|当選)[^=\n]*"):
         district = _plain(cells[i][1])
         rest = [c for _, c in cells[i + 1:]]
         kind = "補欠選挙"
-        if rest and rest[0] not in ("新", "前", "元", "現") and not LINK.search(rest[0]) and \
-                re.search(r"選挙|当選|補欠|再", rest[0]):
-            kind = {"補欠": "補欠選挙", "再": "再選挙"}.get(rest[0], rest[0])
+        p0 = _plain(rest[0]) if rest else ""
+        if rest and p0 not in ("新", "前", "元", "現") and re.fullmatch(r"[^\[\]]{0,8}(選挙|当選|補欠|再)", p0):
+            kind = {"補欠": "補欠選挙", "再": "再選挙"}.get(p0, p0)   # 「[[第16回…|合併選挙]]」のようなリンクも
             rest = rest[1:]
         ri = next((k for k in range(len(rest) - 1, -1, -1) if REASON.search(rest[k])), None)
         if ri is None:

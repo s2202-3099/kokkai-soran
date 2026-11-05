@@ -4,7 +4,7 @@
 
 - 表の項目：`docs/schema.md`
 - 作業の記録と検証の結果：`docs/log.md`
-- データ：`data/*.csv`（いまは並立制の衆院選11回〈1996〜2026年〉と、その投票日に在職していた参院議員）
+- データ：`data/*.csv`（いまは衆院選12回〈1993〜2026年。中選挙区制の第40回と並立制の11回〉と、その投票日に在職していた参院議員）
 - サイト：`index.html`（版の一覧・版・人物を一枚で切り替える）と、台帳から作る `site.json`
 - 作り方：`tools/`（`PYTHONPATH=tools python3 tools/build.py <衆院の作業フォルダ> <参院の作業フォルダ> data` で台帳、`python3 tools/build_site.py data site.json` でサイトのデータ。参院議員の投票日の会派は `python3 tools/fetch_kaiha.py data <参院の作業フォルダ>/kaiha.json` で国会会議録から引く）
 

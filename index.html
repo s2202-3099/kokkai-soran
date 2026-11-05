@@ -309,7 +309,7 @@ function renderTop(){
     <header class="page">
       <p class="eyebrow">衆議院・参議院・貴族院 1890–</p>
       <h1>議員総覧</h1>
-      <p class="lede">衆院総選挙の投票日ごとに、その日の国会にいた議員を一人一つの番号でまとめた名簿です。いまは並立制の11回（1996〜2026年）と、その投票日に在職していた参院議員が入っています。</p>
+      <p class="lede">衆院総選挙の投票日ごとに、その日の国会にいた議員を一人一つの番号でまとめた名簿です。いまは衆院総選挙${S.versions.length}回（${S.versions[0].date.slice(0,4)}〜${S.versions.at(-1).date.slice(0,4)}年、中選挙区制の${S.versions.filter(v=>v.n<=40).length}回と並立制の${S.versions.filter(v=>v.n>=41).length}回）と、その投票日に在職していた参院議員が入っています。</p>
       <div class="totals"><span>版 <b>${S.versions.length}</b></span><span>人物 <b>${nP.toLocaleString()}</b></span><span>在職 <b>${nT.toLocaleString()}</b></span><span>政党 <b>${Object.keys(S.orgs).length}</b></span></div>
     </header>
     <section aria-labelledby="vh"><h2 id="vh">版</h2>
@@ -379,7 +379,7 @@ function renderVersion(v){
     </section>
     <section class="caveat note" aria-label="この版の読み方">
       <p>参議院の党派は、この投票日の所属です。国会会議録でこの日までの最後の発言（なければ直後の発言）の会派を引き、当選時の党派と照らして決めました。会派に合えば当選時の党のまま、合わなければ本人の記事の所属政党の並びや会派の主な党に移し、決め手のないものは「推定」としています。大臣・副大臣などとして話した発言は会派欄が当てにならないので使っていません。議長・副議長は会派を離れるので、歴代議長・副議長の表の出身党派です。人物のページで、一人ずつの会派と発言の日付を見られます。</p>
-      <p>当選回数は台帳に入っている範囲（衆議院は1996年、参議院は1992年の選挙から）で数えています。それより前の当選は入っていません。</p>
+      <p>当選回数は台帳に入っている範囲（${coverTxt()}）で数えています。それより前の当選は入っていません。</p>
       ${v.n<=43?`<p>第41〜43回の比例当選者は、比例復活か比例単独かがまだ分かっていないので「比例」とだけ書いています。</p>`:""}
       <p>${facNote(v)}</p>
       <p>初当選の年と前職は、本人の記事の選挙歴・情報欄によります。</p>
@@ -507,7 +507,7 @@ function renderPerson(p){
     <section aria-labelledby="sh"><h2 id="sh">出典</h2>
       <div class="srcs">${srcIds.map(id=>{const s=S.src[id]; if(!s) return ""; return `<span><a href="${esc(s[1])}" target="_blank" rel="noopener">${esc(s[0])}</a> <small>${s[2]?"版 "+esc(s[2])+" ・ ":""}${sdate(s[3])}取得</small></span>`;}).join("")}</div>
     </section>
-    <section class="caveat note"><p>当選回数と在職は、台帳に入っている範囲（衆議院は1996年、参議院は1992年の選挙から）のものです。派閥と役職は各版の投票日時点、親族は自民党版の名簿（2009年・2026年）の分だけです。</p></section>`;
+    <section class="caveat note"><p>当選回数と在職は、台帳に入っている範囲（${coverTxt()}）のものです。派閥と役職は各版の投票日時点、親族は自民党版の名簿（2009年・2026年）の分だけです。</p></section>`;
 }
 function sanPartyList(p){
   const xs=p.affs.filter(a=>a.asOf && !isFaction(a.org)).sort((a,b)=>a.asOf<b.asOf?-1:1);
@@ -519,6 +519,10 @@ function sanPartyList(p){
         <td><span class="pty"><i class="sw" style="${st}"></i>${esc(a.org?pname(S.orgs[a.org][0]):"無所属")}</span></td>
         <td><span class="sub">${esc(BASIS[a.basis]||a.basis)}</span><div class="sub" style="white-space:normal;max-width:52ch">${esc(a.note.replace(/^投票日の党派；/,""))}</div></td></tr>`;}).join("")}</tbody></table></div>
     <p class="note">国会会議録で投票日までの最後の発言（なければ直後の発言）の会派と、当選時の党派から決めたもの。「本人の記事」とあるものは、記事の本文で一人ずつ確かめた。</p></section>`;
+}
+function coverTxt(){
+  const first=h=>[...S.E.values()].filter(e=>e.house===h).map(e=>e.date).sort()[0]?.slice(0,4);
+  return `衆議院は${first("衆")}年、参議院は${first("参")}年の選挙から`;
 }
 function facNote(v){
   if(v.n===45) return "自民党議員の派閥は、自民党版の名簿（2009年8月30日時点、一人ずつ確かめたもの）から取り込みました。";
