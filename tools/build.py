@@ -1119,6 +1119,7 @@ cab_ev = {}
 for ev in cab_evidence:
     cab_ev[(ev["person_id"], ev["day"])] = ev
 fac_stats, fac_check = {}, {"agree": 0, "disagree": []}
+pending_fac = []   # ここまでで決まらなかった (人, 投票日)。あとで他の時点の所属から埋める
 ldp_oid = oid_of.get("自由民主党")
 for n in nums:
     vote = ELECTIONS[n][1]
@@ -1215,8 +1216,7 @@ for n in nums:
         if res in ("為公会", "番町政策研究所") and vote >= "2017-07-01":
             res = "志公会"   # 2017年7月、為公会と番町政策研究所（山東派）などが合流して志公会に
         if not res:
-            fac_stats.setdefault(vote, {}).setdefault("不明", 0)
-            fac_stats[vote]["不明"] += 1
+            pending_fac.append((pid_, vote, dissolved, y, text))
             continue
         fac_stats.setdefault(vote, {}).setdefault(basis, 0)
         fac_stats[vote][basis] += 1
@@ -1226,6 +1226,122 @@ for n in nums:
         affs.append({"person_id": pid_, "org_id": fac_org(res, src_), "start_date": "", "end_date": "", "as_of": vote,
                      "role": "", "basis": basis, "source_id": src_,
                      "note": "；".join(filter(None, [f"【{lab}】", "推定" if basis == "est" else "", why]))})
+# ---- 派閥：決まらなかった人を、他の時点で出てくる派閥で埋める ----
+# 一度でもある派閥に出てくる人は、退会が書かれていない限りその派閥にいたものとする（たけさんの方針、2026-11-05）。
+# 手がかり：台帳の他の版の派閥の行、その時点の名簿（離れていても）、議員でなくなった時の所属の一覧、本文の入会・退会、
+# 情報欄の派閥が一つだけの場合。投票日より前の手がかりがあればいちばん近いもの、なければ投票日より後のいちばん近いもの。
+FWD = [("為公会", "志公会", "2017-07-01"), ("番町政策研究所", "志公会", "2017-07-01"), ("政策科学研究所", "志帥会", "1999-03-18"),
+       ("新しい波", "志帥会", "2009-11-01"), ("宏池会（谷垣派系）", "宏池会", "2008-05-01"), ("大勇会", "為公会", "2006-12-01"),
+       ("水月会", "石破グループ", "2021-10-01")]
+BWD = [("為公会", "大勇会", "2006-12-01"), ("大勇会", "宏池会", "1999-01-01"), ("近未来政治研究会", "政策科学研究所", "1998-12-01"),
+       ("石破グループ", "水月会", "2021-10-01"), ("宏池会（谷垣派系）", "宏池会", "2001-01-01")]
+
+
+def fac_move(ent, frm, day):
+    """frm の日の派閥 ent を、合流・改称・分かれた元をたどって day の日の派閥に直す。決まらなければ None。"""
+    if ent == "無派閥":
+        return ent
+    if frm <= day:
+        changed = True
+        while changed:
+            changed = False
+            for a, b, d in FWD:
+                if ent == a and frm < d <= day:
+                    ent, frm, changed = b, d, True
+    else:
+        changed = True
+        while changed:
+            changed = False
+            for a, b, d in BWD:
+                if ent == a and day < d:
+                    ent, changed = b, True
+    lo, hi = faction_mod.ENTITY_SPAN.get(ent, [0, 9999])
+    return ent if lo <= int(day[:4]) <= hi else None
+
+
+fac_evidence = {}
+for a in affs:
+    o = oname.get(a["org_id"]) or next((k for k, v in oid_of.items() if v == a["org_id"]), "")
+    if a.get("as_of") and any(z["org_id"] == a["org_id"] and z["kind"] in ("派閥", "グループ") for z in orgs):
+        d_ = "2023-12-31" if "解散時" in a["note"] or "解散前" in a["note"] else a["as_of"]
+        lab = re.match(r"【([^】]*)】", a["note"])
+        fac_evidence.setdefault(a["person_id"], []).append(
+            (d_, o, f"{d_[:4]}年の所属（{lab.group(1) if lab else o}）", a["source_id"]))
+for pid_, xs in snap_by.items():
+    for sn in xs:
+        fac_evidence.setdefault(pid_, []).append((sn["date"], sn["entity"], f"{sn['title']}（{sn['date']}）で{sn['label']}", sn["source_id"]))
+for pid_, xs in exit_by.items():
+    end = last_end.get(pid_, "9999")
+    for ex in xs:
+        if end != "9999" and ex["entity"] != "志公会系":
+            fac_evidence.setdefault(pid_, []).append((end, ex["entity"], f"{ex['page']}の記事の、議員でなくなった時（{end}）にこの派閥にいた人の一覧", ex["source_id"]))
+def persist_pick(pid_, day_, text, skip_day=None):
+    ev = [x for x in fac_evidence.get(pid_, []) if x[0] != skip_day]
+    if text:
+        for ey, e, act in faction_mod.events(text):
+            ev.append((f"{ey}-07-01", "無派閥" if act == "out" else e, f"本文の{ey}年の{'退会' if act == 'out' else '入会'}の記述", P[pid_]["_src"]))
+    pick = None
+    before = sorted((x for x in ev if x[0] <= day_), key=lambda x: x[0])
+    after = sorted((x for x in ev if x[0] > day_), key=lambda x: x[0])
+    if before:
+        x = before[-1]
+        ent = fac_move(x[1], x[0], day_)
+        if ent:
+            pick = (ent, x, "前")
+    if not pick and after and after[0][1] != "無派閥":
+        x = after[0]
+        ent = fac_move(x[1], x[0], day_)
+        if ent:
+            pick = (ent, x, "後")
+    if not pick and text:
+        labs = faction_mod.chain(person.infobox(text))
+        ents = {e for lab in labs for e, _a, _b in faction_mod.lookup(lab)} - {"無派閥"}
+        lins = {faction_mod.LINEAGE.get(e, e) for e in ents}
+        # 情報欄の派閥が一つの系譜だけなら、その系譜で投票日にあった派閥（一つに決まるときだけ）
+        cand = {m for e in ents for m in [fac_move(e, "0000-01-01", day_), fac_move(e, "9999-12-31", day_)] if m}
+        ent = next(iter(cand)) if len(lins) == 1 and len(cand) == 1 and "無派閥" not in labs else None
+        if ent:
+            if ent:
+                pick = (ent, ("", ent, "本人の記事の情報欄（派閥はこれ一つだけ）", P[pid_]["_src"]), "")
+    return pick
+
+
+fill_count = {}
+for pid_, vote, dissolved, y, text in pending_fac:
+    day_ = "2023-12-31" if dissolved else vote
+    pick = persist_pick(pid_, day_, text)
+    if not pick:
+        fac_stats.setdefault(vote, {}).setdefault("不明", 0)
+        fac_stats[vote]["不明"] += 1
+        continue
+    res, x, side = pick
+    why = (f"{x[2]}。それ以後に退会の記述がないので、この投票日も同じ派閥とした" if side == "前" else
+           f"{x[2]}。それより前に別の派閥に入った記述がないので、この投票日も同じ派閥とした" if side == "後" else
+           f"{x[2]}。退会の記述がないので、この投票日も同じ派閥とした")
+    fill_count[vote] = fill_count.get(vote, 0) + 1
+    fac_stats.setdefault(vote, {}).setdefault("est", 0)
+    fac_stats[vote]["est"] += 1
+    lab = fac_label(res, 2023 if dissolved else y)
+    if dissolved and res not in ("無派閥", "志公会"):
+        lab = fac_label(res, 2023, old=True)
+    affs.append({"person_id": pid_, "org_id": fac_org(res, x[3]), "start_date": "", "end_date": "", "as_of": vote,
+                 "role": "", "basis": "est", "source_id": x[3],
+                 "note": "；".join([f"【{lab}】", "推定", "他の時点の所属から", why])})
+
+# 確かめ：2009年の確かめ済みの名簿の人を、2009年の行を除いた手がかりだけで当てるとどうなるか
+fill_check = {"agree": 0, "disagree": [], "none": 0}
+for a in affs:
+    if a.get("as_of") == "2009-08-30" and a["note"].startswith("【") and any(z["org_id"] == a["org_id"] and z["kind"] in ("派閥", "グループ") for z in orgs):
+        truth = next((k for k, v in oid_of.items() if v == a["org_id"]), "")
+        raw = arts.get(P[a["person_id"]]["jawiki_title"]) or {}
+        pk = persist_pick(a["person_id"], "2009-08-30", raw.get("text", ""), skip_day="2009-08-30")
+        if not pk:
+            fill_check["none"] += 1
+        elif pk[0] == truth:
+            fill_check["agree"] += 1
+        else:
+            fill_check["disagree"].append(f"{P[a['person_id']]['name']}：名簿{truth}・当てはめ{pk[0]}（{pk[1][2]}）")
+
 kin = sorted(kin.values(), key=lambda k: (k["person_id"], k["degree"] if k["degree"] != "" else 99))
 posts.sort(key=lambda r: r["as_of"])  # 同じ時点の中は自民党版の並び（内閣の序列など）のまま
 for p_ in persons:
@@ -1275,7 +1391,7 @@ missing_birth = [p["name"] for p in persons if not p["birth_date"]]
 missing_kana = [p["name"] for p in persons if not p["name_kana"]]
 report = {"persons": len(persons), "terms": len(terms), "affiliations": len(affs), "orgs": len(orgs),
           "sources": len(sources), "checks": checks, "missing_birth": missing_birth, "missing_kana": missing_kana,
-          "issues": issues, "by_elections": by_count, "factions": faction_count, "posts": len(posts), "kin": len(kin), "faction_stats": fac_stats, "faction_check": fac_check, "snap_conflict": snap_conflict, "exit_count": exit_count, "san_snapshot": san_snap, "tenure_check": tenure_check, "san_by_elections": by_count_san,
+          "issues": issues, "by_elections": by_count, "factions": faction_count, "posts": len(posts), "kin": len(kin), "faction_stats": fac_stats, "faction_check": fac_check, "snap_conflict": snap_conflict, "exit_count": exit_count, "fill_count": fill_count, "fill_check": fill_check, "san_snapshot": san_snap, "tenure_check": tenure_check, "san_by_elections": by_count_san,
           "san_routes": {f"{n}-{r}": c for (n, r), c in san_count.items()},
           "routes": {n: {k: sum(1 for t in terms if t["election_id"] == f"shu-{n:03d}" and t["route"] == k)
                          for k in ("小選挙区", "比例復活", "比例単独", "比例")} for n in nums}}
