@@ -28,7 +28,9 @@ def strip_refs(s):
 
 
 def legend(text):
-    return {_norm_color(c): name.strip() for c, name in COLORBOX.findall(text)}
+    """凡例（{{colorbox|#色|党名}}・{{政党箱|党名}}・{{政党箱|色|党名}}）から 色→党名。"""
+    import winners
+    return {_norm_color(c): name for c, name in winners.legend(text).items()}
 
 
 def _grid(table):

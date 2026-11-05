@@ -104,5 +104,6 @@ def extract(text):
                 seated = f"{year:04d}-{int(md.split('.')[0]):02d}" + (f"-{int(md.split('.')[1]):02d}" if "." in md else "")
             reason = next((k for k in REASONS if k in rm.group(4)), rm.group(4).strip())
         out.append({"date": vac, "seated": seated, "reason": reason, "block": block,
-                    "new_article": new[0], "new_name": new[1], "old_article": old[0], "old_name": old[1]})
+                    "new_article": new[0], "new_name": new[1], "old_article": old[0], "old_name": old[1],
+                    "raw": re.sub(r"<ref[^>]*/>|<ref[^>]*>.*?</ref>", "", row, flags=re.S)})
     return out
