@@ -83,6 +83,8 @@ def _district(content):
     """区の見出しから (都道府県, 区の名前)。「[[北海道第1区 (中選挙区)|1区]]」「[[鳥取県全県区|全県区]]」など。"""
     lk = LINK.search(content)
     target = lk.group(1).strip() if lk else re.sub(r"<[^>]+>", "", content).strip()
+    if target.startswith("奄美群島"):
+        return "鹿児島県", "奄美群島区"
     m = re.match(r"(.+?[都道府県]|北海道)(第\d+区|全県区|全区)", target.replace("北海道第", "北海道第"))
     if m:
         name = m.group(2).replace("第", "")
