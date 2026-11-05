@@ -78,6 +78,8 @@ def extract(text, heading=r"補欠(?:選挙|当選)[^=\n]*"):
             i += 1
         elif i < len(cells) and re.fullmatch(r"\d{1,2}", cells[i][1]):
             i += 1  # 「10」だけの月（実施せず）
+        elif i < len(cells) and cells[i][0] == "|" and re.fullmatch(r"[-－‐ー]", cells[i][1]):
+            i += 1  # 未実施の行の「-」だけの月日
         if i >= len(cells) or cells[i][0] != "!":
             # 選挙区の見出しセルがない行（同じ日の続き）は、前の日付を使う
             if out and md is None and cells and cells[0][0] == "!":
@@ -94,7 +96,7 @@ def extract(text, heading=r"補欠(?:選挙|当選)[^=\n]*"):
         rest = [c for _, c in cells[i + 1:]]
         kind = "補欠選挙"
         p0 = _plain(rest[0]) if rest else ""
-        if rest and p0 not in ("新", "前", "元", "現") and re.fullmatch(r"[^\[\]]{0,8}(選挙|当選|補欠|再)", p0):
+        if rest and p0 not in ("新", "前", "元", "現") and re.fullmatch(r"[^\[\]]{0,8}(選挙|当選|補欠|再|補充)", p0):
             kind = {"補欠": "補欠選挙", "再": "再選挙"}.get(p0, p0)   # 「[[第16回…|合併選挙]]」のようなリンクも
             rest = rest[1:]
         ri = next((k for k in range(len(rest) - 1, -1, -1) if REASON.search(rest[k])), None)

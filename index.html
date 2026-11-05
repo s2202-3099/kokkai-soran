@@ -225,7 +225,7 @@ async function load(){
   versions.forEach((v,i)=>{ v.no=i+1; v.next=versions[i+1]||null; });
   // 参院の各組の任期（通常選挙の当選者の在職から）
   const span = {};
-  for(const t of T) if(t.house==="参" && (t.route==="選挙区"||t.route==="比例")){
+  for(const t of T) if(t.house==="参" && ["選挙区","比例","地方区","全国区"].includes(t.route)){
     const s = span[t.eid] ||= [t.start,t.end]; if(t.start<s[0]) s[0]=t.start; if(t.end>s[1]) s[1]=t.end; }
   S = {POSTS,P,E,T,orgs:j.orgs,dist:j.districts,distOrder,versions,span,src:j.sources,built:j.built};
   $("#built").textContent = ` 台帳の取得日 ${sdate(j.built)}。`;

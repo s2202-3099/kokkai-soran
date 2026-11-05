@@ -69,11 +69,51 @@ def _cells(table):
             yield head, c
 
 
+def _header_grid_rows(sec, notes, fix):
+    """「見出しの行（県名、colspan が定数）→ 当選者の行」が交互に続く表（1980年代の記事）を読む。"""
+    from wtable import _split_cells, _span
+    i = sec.find("{|")
+    leg = _leg(sec, i)
+    end = sec.find("\n|}", i)
+    body = sec[i:end if end > 0 else len(sec)]
+    rows, cols = [], None
+    for chunk in body.split("\n|-")[1:]:
+        cells = []
+        for line in chunk.split("\n"):
+            st = line.strip()
+            if st and st[0] in "|!" and not st.startswith("|}"):
+                cells += _split_cells(st)
+        heads = [c for c in cells if c[0]]
+        if heads and not any(not c[0] and BG.search(c[1] or "") for c in cells):
+            cols = []
+            for _h, a, c in heads:
+                lk = LINK.search(c)
+                p = (_pref_of(lk.group(2) or lk.group(1)) or _pref_of(lk.group(1))) if lk else None
+                cols += [p] * _span(a, "colspan")
+            continue
+        if cols is None:
+            continue
+        data = [c for c in cells if not c[0] and BG.search(c[1] or "")]
+        for k, (_h, a, c) in enumerate(data):
+            bm = BG.search(a or "")
+            lk = LINK.search(strip_refs(c))
+            if not bm or not lk or k >= len(cols) or not cols[k]:
+                continue
+            note = _note_text(c)
+            rows.append({"kind": "選挙区", "pref": cols[k], "party": _party(leg, bm.group(1), cols[k], notes, fix),
+                         "article": lk.group(1).strip().replace("_", " "), "name": (lk.group(2) or lk.group(1)).strip(),
+                         "short": bool(SHORT_TERM.search(note)), "tokutei": False, "note": note[:200]})
+        cols = None
+    return rows
+
+
 def _table_rows(sec, kind, notes, fix):
     rows = []
     i = sec.find("{|")
     if i < 0:
         return rows
+    if kind == "選挙区" and re.search(r"^!.*\]\]\s*!!", sec[i:], re.M):
+        return _header_grid_rows(sec, notes, fix)
     leg = _leg(sec, i)
     pref, rank_base, k = None, None, 0
     for head, c in _cells(sec[i:]):
@@ -83,8 +123,8 @@ def _table_rows(sec, kind, notes, fix):
                 p = _pref_of(lk.group(2) or lk.group(1)) or _pref_of(lk.group(1))
                 if p:
                     pref = p
-            m = re.match(r"\s*(?:[^|]*\|)?\s*(\d+)\s*[-‐–〜~]\s*\d+", c)
-            if kind == "比例" and m:
+            m = re.match(r"\s*(?:[^|]*\|)?\s*(\d+)\s*位?\s*[-‐–〜~]\s*\d+", c)
+            if kind in ("比例", "全国区") and m:
                 rank_base, k = int(m.group(1)), 0
             continue
         bm = BG.search(c.split("|")[0]) if "|" in c else None
@@ -92,7 +132,7 @@ def _table_rows(sec, kind, notes, fix):
         lk = LINK.search(strip_refs(body))
         if not lk or not bm:
             continue
-        where = pref if kind == "選挙区" else f"比例{(rank_base or 0) + k}"
+        where = pref if kind == "選挙区" else f"{kind}{(rank_base or 0) + k}"
         party = _party(leg, bm.group(1), where, notes, fix)
         note = _note_text(body)
         r = {"kind": kind, "party": party, "article": lk.group(1).strip().replace("_", " "),
@@ -141,7 +181,10 @@ def extract(text, fix=None, tokutei=()):
     fix = {k.lower(): v for k, v in (fix or {}).items()}
     notes = []
     out = []
-    for kind, heads, tpl in (("選挙区", r"(?:この選挙で)?選挙区当選(?:者)?", "参院選挙区当選者"),
+    national = section(text, r"(?:比例区当選者|比例代表選出議員)") is None and \
+        section(text, r"(?:この選挙で)?全国区当選(?:者)?") is not None   # 1980年までの全国区
+    for kind, heads, tpl in (("選挙区", r"(?:この選挙で)?(?:選挙区|地方区)当選(?:者)?", "参院選挙区当選者"),
+                             ("全国区", r"(?:この選挙で)?全国区当選(?:者)?", "参院比例当選者") if national else
                              ("比例", r"(?:比例区当選者|比例代表選出議員)", "参院比例当選者")):
         sec = section(text, heads)
         if sec is None:

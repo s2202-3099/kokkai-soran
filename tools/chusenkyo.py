@@ -13,6 +13,11 @@ COLORBOX = re.compile(r"\{\{colorbox\|\s*(#?[0-9A-Fa-f]{3,6})\s*\|\s*([^}|]+?)\s
 BG = re.compile(r"background(?:-color)?\s*:\s*(#[0-9A-Fa-f]{3,6})")
 
 
+# 凡例の略称 → 台帳の党名（中選挙区の時代、1996年より前なので社会党は日本社会党）
+OLD_NAMES = {"社会党": "日本社会党", "社民連": "社会民主連合", "革自連": "革新自由連合", "自ク連": "新自由クラブ民主連合",
+             "新自ク": "新自由クラブ"}
+
+
 def _norm_color(c):
     c = c.lower().lstrip("#")
     if len(c) == 3:
@@ -139,6 +144,8 @@ def extract(text):
                 continue
             seen.add(key)
             refs = re.findall(r"\{\{[Rr]efnest\|[^{}]*?\|name=\"?[^|}\"]*\"?\|([^{}]*)\}\}", c)
+            import winners as _w
+            party = OLD_NAMES.get(party, _w.canon(party)[0] if party != "無所属" else party)
             rows.append({"kind": "中選挙区", "pref": cur[0], "district": cur[1], "party": party,
                          "article": lk.group(1).strip(), "name": (lk.group(2) or lk.group(1)).strip(),
                          "note": refs[0].strip() if refs else ""})
