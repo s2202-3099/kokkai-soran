@@ -232,7 +232,10 @@ async function load(){
 }
 
 /* ---- 時点の計算 ---- */
-const inOffice = (house, D) => S.T.filter(t=>t.house===house && t.start<=D && (!t.end || t.end>=D));
+/* 衆院の総選挙の投票日には、その回の当選者だけを数える（1976年の任期満了選挙では、前の回の議員の任期が投票日の後まで続く） */
+const isShuVote = D => [...S.E.values()].some(e=>e.house==="衆" && e.date===D);
+const onAt = (t, D) => t.start<=D && (!t.end || t.end>=D) && !(t.house==="衆" && S.E.get(t.eid)?.date<D && isShuVote(D));
+const inOffice = (house, D) => S.T.filter(t=>t.house===house && onAt(t, D));
 /* 当選時の党派：その在職の始まり（または選挙の投票日）の所属。行がなければ無所属で当選した人。 */
 /* 投票日の党派：参院議員はその日の所属（as_of の行）があればそれ、なければ当選時。衆院議員は当選時＝投票日。 */
 function partyAt(t, D){
@@ -473,7 +476,7 @@ function renderPerson(p){
       <td><span class="sub">${esc(BASIS[t.basis]||t.basis)}</span>${t.note?`<div class="sub" style="white-space:normal;max-width:32ch">${esc(t.note)}</div>`:""}</td></tr>`;
   }).join("");
   const vchips=S.versions.map(v=>{
-    const on=p.terms.some(t=>t.start<=v.date&&(!t.end||t.end>=v.date));
+    const on=p.terms.some(t=>onAt(t, v.date));
     return on?`<a href="#${v.id}">${v.date.slice(0,4)}</a>`:"";
   }).filter(Boolean).join("");
   const srcIds=[...new Set(p.terms.map(t=>t.src).concat(p.affs.map(a=>a.src)))].filter(Boolean);
