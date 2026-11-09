@@ -18,9 +18,11 @@ if os.path.exists(cache):
 d = json.load(open(os.path.join(W, "src.json")))
 # 特定枠の注記が名前参照（{{Efn2|name=tokutei}}）になっていて拾えない回
 TOK = {25: ("舩後靖彦", "木村英子")}
+# 凡例に載っていない党の色（第6回：共産党の野坂参三氏〈東京の補欠〉と全国区の参議院同志会）
+FIX = {6: {"f66": "日本共産党", "89e": "参議院同志会"}}
 out = {}
-for n in range(7, 28):
-    rows, notes = sanin.extract(d[f"第{n}回参議院議員通常選挙"]["text"], tokutei=TOK.get(n, ()))
+for n in range(6, 28):
+    rows, notes = sanin.extract(d[f"第{n}回参議院議員通常選挙"]["text"], tokutei=TOK.get(n, ()), fix=FIX.get(n))
     for r in rows:
         r["name"] = re.sub(r"\{\{color\|[^|{}]*\|([^{}]*)\}\}", r"\1", r["name"]).strip()
     out[n] = {"rows": rows, "notes": notes}
