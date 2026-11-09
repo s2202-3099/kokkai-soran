@@ -273,10 +273,12 @@ const facVersions = () => new Set(S.versions.filter(v=>[...S.P.values()].some(p=
 let FACV;
 function lineageOf(orgId){ return orgId ? (S.orgs[orgId][1]||"諸派") : "無所属"; }
 function winsBefore(p, house, D){ return p.terms.filter(t=>t.house===house && t.start<=D).length; }
+/* 改選数に他の組の欠員を埋める任期3年の議席が入っていて、二つの組の改選数の和が定数にならない日（1969年：127＋126、定数250） */
+const SAN_SEATS_AT = {"1969-12-27": 250};
 function sanSeats(D){
   let n=0; const groups=[];
   for(const [eid,[a,b]] of Object.entries(S.span)) if(a<=D && D<=b){ n+=S.E.get(eid).seats; groups.push(S.E.get(eid)); }
-  return {seats:n, groups:groups.sort((x,y)=>x.n-y.n)};
+  return {seats:SAN_SEATS_AT[D]||n, groups:groups.sort((x,y)=>x.n-y.n)};
 }
 
 /* 党派ごとの集計と色。系譜の中では人数の多い順に濃い色から。 */
