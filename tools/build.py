@@ -1482,6 +1482,15 @@ def fac_move(ent, frm, day):
     return ent if lo <= int(day[:4]) <= hi else None
 
 
+import roster as roster_mod
+ROSTER, ROSTER_SRC = {}, {}
+_rp = os.path.join(W2, "fac_rosters.json")
+if os.path.exists(_rp):
+    _pages = json.load(open(_rp))
+    ROSTER = roster_mod.extract(_pages)
+    for _k, _v in _pages.items():
+        ROSTER_SRC[_k] = add_source("Wikipedia " + _v["title"], "https://ja.wikipedia.org/wiki/" + _v["title"], "wikipedia", _v["revid"])
+
 fac_evidence = {}
 for a in affs:
     o = oname.get(a["org_id"]) or next((k for k, v in oid_of.items() if v == a["org_id"]), "")
@@ -1547,6 +1556,25 @@ def persist_pick(pid_, day_, text, skip_day=None):
         if ms and len(lins) == 1 and len(cand) == 1:
             ent = next(iter(cand))
             pick = (ent, ("", ent, f"本人の記事の本文に「{ms[0][0]}」の所属の記述（年の記載なし）", P[pid_]["_src"]), "")
+    if not pick:
+        # 派閥の記事の所属議員の一覧（本人の記事に派閥が書かれていない議員のための、いちばん弱い手がかり）
+        y_ = int(day_[:4])
+        found = {}
+        rs_ = ROSTER.get(P[pid_].get("jawiki_title") or "", [])
+        dated_ = {e for e, a_, b_, *_ in rs_ if a_}
+        for e, a_, b_, art_, head_ in rs_:
+            if e in dated_ and not a_:
+                continue      # 同じ派閥に年の分かる行があれば、年のない行は使わない（巽会の出身別の一覧）
+            if art_ in roster_mod.MAIN:
+                m = fac_move(e, "9999-12-31", day_)      # 議員でなくなるまでいた派閥を、投票日の派閥にたどる
+            else:
+                sp = faction_mod.ENTITY_SPAN.get(e, [0, 9999])
+                m = e if (a_ or sp[0]) <= y_ <= (b_ or sp[1]) else None
+            if m:
+                found.setdefault(m, (art_, head_))
+        if len(found) == 1:
+            ent, (art_, head_) = next(iter(found.items()))
+            pick = (ent, ("", ent, f"派閥の記事「{art_}」の一覧（{head_}）に名前がある（年の記載なし）", ROSTER_SRC[art_]), "")
     return pick
 
 
