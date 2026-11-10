@@ -21,7 +21,7 @@ TOK = {25: ("舩後靖彦", "木村英子")}
 # 凡例に載っていない党の色（第6回：共産党の野坂参三氏〈東京の補欠〉と全国区の参議院同志会）
 FIX = {6: {"f66": "日本共産党", "89e": "参議院同志会"}}
 out = {}
-for n in range(5, 28):
+for n in range(4, 28):
     rows, notes = sanin.extract(d[f"第{n}回参議院議員通常選挙"]["text"], tokutei=TOK.get(n, ()), fix=FIX.get(n))
     for r in rows:
         r["name"] = re.sub(r"\{\{color\|[^|{}]*\|([^{}]*)\}\}", r"\1", r["name"]).strip()

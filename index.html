@@ -274,7 +274,7 @@ let FACV;
 function lineageOf(orgId){ return orgId ? (S.orgs[orgId][1]||"諸派") : "無所属"; }
 function winsBefore(p, house, D){ return p.terms.filter(t=>t.house===house && t.start<=D).length; }
 /* 改選数に他の組の欠員を埋める任期3年の議席が入っていて、二つの組の改選数の和が定数にならない日（1969年：127＋126、定数250） */
-const SAN_SEATS_AT = {"1963-11-21": 250, "1967-01-29": 250, "1969-12-27": 250};
+const SAN_SEATS_AT = {"1960-11-20": 250, "1963-11-21": 250, "1967-01-29": 250, "1969-12-27": 250};
 function sanSeats(D){
   let n=0; const groups=[];
   for(const [eid,[a,b]] of Object.entries(S.span)) if(a<=D && D<=b){ n+=S.E.get(eid).seats; groups.push(S.E.get(eid)); }
