@@ -21,8 +21,14 @@ TOK = {25: ("舩後靖彦", "木村英子")}
 # 凡例に載っていない党の色（第6回：共産党の野坂参三氏〈東京の補欠〉と全国区の参議院同志会）
 FIX = {6: {"f66": "日本共産党", "89e": "参議院同志会"}}
 out = {}
-for n in range(4, 28):
-    rows, notes = sanin.extract(d[f"第{n}回参議院議員通常選挙"]["text"], tokutei=TOK.get(n, ()), fix=FIX.get(n))
+# 記事の表の書き損じ（第3回の大阪：行を分けるはずのところが「|」になっていて、亀田得治氏が読めない）
+TEXT_FIX = {3: [("[[中山福蔵]]|cff:[[亀田得治]]", "[[中山福蔵]]\ncff:[[亀田得治]]")]}
+for n in range(3, 28):
+    text = d[f"第{n}回参議院議員通常選挙"]["text"]
+    for a_, b_ in TEXT_FIX.get(n, []):
+        assert a_ in text, a_
+        text = text.replace(a_, b_)
+    rows, notes = sanin.extract(text, tokutei=TOK.get(n, ()), fix=FIX.get(n))
     for r in rows:
         r["name"] = re.sub(r"\{\{color\|[^|{}]*\|([^{}]*)\}\}", r"\1", r["name"]).strip()
     out[n] = {"rows": rows, "notes": notes}

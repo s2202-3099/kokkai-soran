@@ -46,7 +46,12 @@ def birth(t, ib):
         m = re.search(pat, t)
         if m:
             return f"{int(m[1]):04d}-{int(m[2]):02d}-{int(m[3]):02d}", "記事の生年月日欄"
-    lead = t[t.find("\n'''") if "\n'''" in t else 0:][:1500]
+    # 情報欄の「生年月日 = [[1913年]][[2月15日]]」（テンプレートを使わない書き方）
+    m = re.search(r"\|\s*生年月日\s*=\s*(?:\[\[)?(\d{4})年(?:\]\])?(?:（[^）]{0,12}）)?\s*(?:\[\[)?(\d{1,2})月(\d{1,2})日", t)
+    if m:
+        return f"{int(m[1]):04d}-{int(m[2]):02d}-{int(m[3]):02d}", "記事の生年月日欄"
+    i_ = t.find("\n'''") if "\n'''" in t else t.find("}}'''")
+    lead = t[max(i_, 0):][:1500]
     lead = re.sub(r"<ref[^>]*/>|<ref[^>]*>.*?</ref>", "", lead, flags=re.S)
     lead = re.sub(r"\[\[(?:[^\]|]*\|)?([^\]]*)\]\]", r"\1", lead)
     m = re.search(r"(\d{4})年(?:（[^）]{0,12}）|〈[^〉]{0,12}〉)?\s*(\d{1,2})月(\d{1,2})日\s*[-‐–－ー]", lead) or \
