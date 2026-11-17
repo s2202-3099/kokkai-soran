@@ -143,7 +143,9 @@ for v in by_page.values():
             kind = next((k for k in kizokuin.KINDS if k[:-2] in area), None) or fx.get("kind")
             if not kind:
                 if "皇族議員" in ks and len(ks) > 1:
-                    kind = "皇族議員" if i == 0 and len(raw) > 1 else next(k for k in ks if k != "皇族議員")
+                    # 在職が一つだけなら、記事名が「○○王」「○○親王」の人は皇族議員、臣籍降下後の名前の人は爵位の議員
+                    first_is_kozoku = len(raw) > 1 or re.search(r"(?:王|親王)$", t)
+                    kind = "皇族議員" if i == 0 and first_is_kozoku else next(k for k in ks if k != "皇族議員")
                 else:
                     kind = ks[-1] if ks else ""
             if kind == "朝鮮・台湾勅選議員":
@@ -155,7 +157,10 @@ for v in by_page.values():
             e2, why, est = close(kind, s, e, r["death"])
             if e2 < s[:len(e2)]:
                 continue
-            spans.append((s, e2, why or reason_of(v["text"], e2, r["death"]), est, kind))
+            why = why or reason_of(v["text"], e2, r["death"])
+            if kind == "皇族議員" and e2 == KOZOKU_END:
+                why = "辞職"   # 1946年5月23日、在職していた皇族議員の全員が辞任
+            spans.append((s, e2, why, est, kind))
     # 前の在職の中に始まりが入っている期間は同じ在職の言い換え（「1947年、廃止まで在任」など）なので捨てる
     spans.sort(key=lambda x: x[0])
     kept = []

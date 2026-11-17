@@ -10,7 +10,7 @@ from winners import strip_refs
 
 LINK = re.compile(r"\[\[([^\]|]+)(?:\|([^\]]+))?\]\]")
 REASON = re.compile(r"(\d{4})[.年](\d{1,2})[.月](\d{1,2})日?\s*([^\n|{<]*)")
-REASONS = ("自動失職", "当選無効", "辞職", "死去", "退職", "失職", "除名", "辞任")
+REASONS = ("自動失職", "当選無効", "選挙無効", "応召", "辞職", "死去", "退職", "失職", "除名", "辞任")
 
 
 def _cells(row):
@@ -62,7 +62,7 @@ def extract(text, heading=r"補欠(?:選挙|当選)[^=\n]*"):
     end = text.find("\n|}", start)
     table = strip_refs(text[start:end])
     table = re.sub(r"\{\{(?:efn2?|Refnest)[^{}]*(?:\{\{[^{}]*\}\}[^{}]*)*\}\}", "", table)
-    out, year = [], None
+    out, year, prev_held = [], None, False
     for row in table.split("\n|-")[1:]:
         cells = _cells(row)
         i = 0
@@ -80,10 +80,13 @@ def extract(text, heading=r"補欠(?:選挙|当選)[^=\n]*"):
             i += 1  # 「10」だけの月（実施せず）
         elif i < len(cells) and cells[i][0] == "|" and re.fullmatch(r"[-－‐ー]", cells[i][1]):
             i += 1  # 未実施の行の「-」だけの月日
+        cont = False
         if i >= len(cells) or cells[i][0] != "!":
             # 選挙区の見出しセルがない行（同じ日の続き）は、前の日付を使う
             if out and md is None and cells and cells[0][0] == "!":
                 i = 0
+            elif out and md is None and cells and _plain(cells[0][1]) in ("新", "前", "元", "現") and prev_held:
+                cont = True   # 同じ選挙区で二人が当選した補欠選挙の二行目（年・月日・選挙区・選出のセルが上の行と共通）
             else:
                 continue
         if md:
@@ -92,13 +95,17 @@ def extract(text, heading=r"補欠(?:選挙|当選)[^=\n]*"):
             last_date = out[-1]["date"]
         else:
             last_date = ""
-        district = _plain(cells[i][1])
-        rest = [c for _, c in cells[i + 1:]]
-        kind = "補欠選挙"
-        p0 = _plain(rest[0]) if rest else ""
-        if rest and p0 not in ("新", "前", "元", "現") and re.fullmatch(r"[^\[\]]{0,8}(選挙|当選|補欠|再|補充)", p0):
-            kind = {"補欠": "補欠選挙", "再": "再選挙"}.get(p0, p0)   # 「[[第16回…|合併選挙]]」のようなリンクも
-            rest = rest[1:]
+        if cont:
+            district, kind, last_date = out[-1]["district"], out[-1]["kind"], out[-1]["date"]
+            rest = [c for _, c in cells]
+        else:
+            district = _plain(cells[i][1])
+            rest = [c for _, c in cells[i + 1:]]
+            kind = "補欠選挙"
+            p0 = _plain(rest[0]) if rest else ""
+            if rest and p0 not in ("新", "前", "元", "現") and re.fullmatch(r"[^\[\]]{0,8}(選挙|当選|補欠|再|補充|復職)", p0):
+                kind = {"補欠": "補欠選挙", "再": "再選挙"}.get(p0, p0)   # 「[[第16回…|合併選挙]]」のようなリンクも。「復職」は応召した議員の復帰
+                rest = rest[1:]
         ri = next((k for k in range(len(rest) - 1, -1, -1) if REASON.search(rest[k])), None)
         if ri is None:
             continue
@@ -108,6 +115,7 @@ def extract(text, heading=r"補欠(?:選挙|当選)[^=\n]*"):
         win = _person(rest[1]) if held and len(rest) > 1 else (None, None)
         wparty = _plain(rest[2]) if held and len(rest) > 2 else ""
         oparty = _plain(rest[ri - 1]) if ri >= 1 else ""
+        prev_held = held
         out.append({"date": last_date if held else "", "kind": kind if held else "未実施",
                     "district": district,
                     "winner_article": win[0], "winner_name": win[1], "winner_party": wparty,

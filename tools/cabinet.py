@@ -84,7 +84,7 @@ def extract(text):
         if not sec or not sec[0]:
             continue
         kind, head = sec
-        ph = [h for h in re.findall(r"^=+\s*([^=\n]+?)\s*=+\s*$", text[:pos], re.M) if re.search(r"発足時|改造後|改正後", h)]
+        ph = [h for h in re.findall(r"^=+\s*([^=\n]+?)\s*=+\s*$", text[:pos], re.M) if re.search(r"発足時|改造後|改正後|再編前|再編後", h)]
         phase = ph[-1] if ph else ""   # 一つの記事に発足時・改造後の表が並ぶ内閣（幣原内閣・第1次吉田内閣）
         g = wtable.grid(tb)
         if not g:
