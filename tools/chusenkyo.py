@@ -90,12 +90,12 @@ def _district(content):
     target = lk.group(1).strip() if lk else re.sub(r"<[^>]+>", "", content).strip()
     if target.startswith("奄美群島"):
         return "鹿児島県", "奄美群島区"
-    m = re.match(r"(.+?[都道府県]|北海道)(第\d+区|全県区|全区)", target.replace("北海道第", "北海道第"))
+    m = re.match(r"(.+?[都道府県]|北海道)(第\d+区|全県区|全府区|全区)", target.replace("北海道第", "北海道第"))
     if m:
         name = m.group(2).replace("第", "")
         return m.group(1), name
     shown = (lk.group(2) or lk.group(1)).strip() if lk else target
-    if re.fullmatch(r"\d+区|全県区|全区", shown):
+    if re.fullmatch(r"\d+区|全県区|全府区|全区", shown):
         return None, shown
     return None
 

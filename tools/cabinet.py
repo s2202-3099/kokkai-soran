@@ -34,6 +34,10 @@ def dates(note):
     start = end = ""
     s = re.sub(r"<br\s*/?>", " ", note)
     s = LINK.sub(lambda m: m.group(2) or m.group(1), s)
+    m2 = re.search(r"まで[^、。]*、同日から", s)
+    if m2:   # 「1947年1月31日まで国務大臣（無任所）、同日から内相」：その日にこの職に就いた
+        m = DATE.search(s)
+        return (_iso(m), "") if m else ("", "")
     for m in DATE.finditer(s):
         before, after = s[max(0, m.start() - 3):m.start()], s[m.end():m.end() + 8]
         if re.match(r"\s*(?:" + END_W + ")", after) or re.search(r"[-－–〜~]\s*$", before):
@@ -80,6 +84,8 @@ def extract(text):
         if not sec or not sec[0]:
             continue
         kind, head = sec
+        ph = [h for h in re.findall(r"^=+\s*([^=\n]+?)\s*=+\s*$", text[:pos], re.M) if re.search(r"発足時|改造後|改正後", h)]
+        phase = ph[-1] if ph else ""   # 一つの記事に発足時・改造後の表が並ぶ内閣（幣原内閣・第1次吉田内閣）
         g = wtable.grid(tb)
         if not g:
             continue
@@ -105,7 +111,7 @@ def extract(text):
             fac = _faction(row[c_aff][1]) if c_aff is not None and c_aff < len(row) else None
             out.append({"kind": kind, "section": head, "post": role_lines[0] if role_lines else "",
                         "extra": "・".join(role_lines[1:]), "article": person[0], "name": person[1],
-                        "start": s, "end": e, "faction": fac, "note": plain(note).replace("\n", "　")})
+                        "start": s, "end": e, "faction": fac, "note": plain(note).replace("\n", "　"), "phase": phase})
     # 箇条書きの副大臣・大臣政務官
     for m in re.finditer(r"^\*\s*'''\[\[([^\]|]+)(?:\|([^\]]+))?\]\]'''\s*[-－–]\s*(.+)$", text, re.M):
         sec = _section_of(text, m.start())

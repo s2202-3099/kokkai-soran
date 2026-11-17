@@ -306,7 +306,7 @@ function renderTop(){
       <div class="vdate">${jdate(v.date)}<small>第${v.n}回衆院選の投票日・第${v.no}版</small></div>
       <div class="vbands">
         <div class="vband"><span>衆</span>${bandHTML(cs, v.seats)}<span class="num">${shu.length}</span></div>
-        <div class="vband"><span>参</span>${bandHTML(cn, seats)}<span class="num">${san.length}</span></div>
+        ${v.date<"1947-05-03"?`<div class="vband"><span>貴</span><div class="band"></div><span class="num">未収録</span></div>`:`<div class="vband"><span>参</span>${bandHTML(cn, seats)}<span class="num">${san.length}</span></div>`}
       </div></a>`;
   }).join("");
   const nP = S.P.size, nT = S.T.length;
@@ -314,7 +314,7 @@ function renderTop(){
     <header class="page">
       <p class="eyebrow">衆議院・参議院・貴族院 1890–</p>
       <h1>議員総覧</h1>
-      <p class="lede">衆院総選挙の投票日ごとに、その日の国会にいた議員を一人一つの番号でまとめた名簿です。いまは衆院総選挙${S.versions.length}回（${S.versions[0].date.slice(0,4)}〜${S.versions.at(-1).date.slice(0,4)}年、中選挙区制の${S.versions.filter(v=>v.n<=40).length}回と並立制の${S.versions.filter(v=>v.n>=41).length}回）と、その投票日に在職していた参院議員が入っています。</p>
+      <p class="lede">衆院総選挙の投票日ごとに、その日の国会にいた議員を一人一つの番号でまとめた名簿です。いまは衆院総選挙${S.versions.length}回（${S.versions[0].date.slice(0,4)}〜${S.versions.at(-1).date.slice(0,4)}年、${S.versions.some(v=>v.n===22)?"大選挙区制の1回、":""}中選挙区制の${S.versions.filter(v=>v.n<=40&&v.n>=23).length}回と並立制の${S.versions.filter(v=>v.n>=41).length}回）と、その投票日に在職していた参院議員が入っています。</p>
       <div class="totals"><span>版 <b>${S.versions.length}</b></span><span>人物 <b>${nP.toLocaleString()}</b></span><span>在職 <b>${nT.toLocaleString()}</b></span><span>政党 <b>${Object.keys(S.orgs).length}</b></span></div>
     </header>
     <section aria-labelledby="vh"><h2 id="vh">版</h2>
@@ -362,20 +362,24 @@ function renderVersion(v){
       ${tableBlock(key, rows, D, comp, v)}
     </section>`;
   };
+  const preSan = D < "1947-05-03";   // 参議院議員の任期が始まる前（上院は貴族院）
   const groupsTxt = ss.groups.map(g=>`${g.date.slice(0,4)}年の組`).join("と");
   $("#main").innerHTML = `
     <header class="page">
       <p class="eyebrow">第${v.no}版 ・ 第${v.n}回衆議院議員総選挙の投票日</p>
       <h1>${jdate(D)}</h1>
-      <p class="lede">この日の国会の全構成です。衆議院はこの総選挙の当選者、参議院はこの日に在職していた議員を載せています。${nextTxt}</p>
-      <div class="totals"><span>衆議院 <b>${shu.length}</b></span><span>参議院 <b>${san.length}</b>${ss.seats-san.length>0?`（欠員 ${ss.seats-san.length}）`:""}</span><span>合わせて <b>${shu.length+san.length}</b></span></div>
+      ${preSan
+        ? `<p class="lede">この日の衆議院の構成です。この総選挙の当選者を載せています。${D==="1947-04-25"?"参議院は5日前の4月20日に最初の選挙を終えていましたが、議員の任期は憲法施行の5月3日からなので、この日はまだ誰も在職していません。":""}この日の上院は貴族院で、貴族院議員はまだ台帳に入っていません。${nextTxt}</p>
+      <div class="totals"><span>衆議院 <b>${shu.length}</b>${v.seats-shu.length>0?`（欠員 ${v.seats-shu.length}）`:""}</span><span>貴族院 <b>未収録</b></span></div>`
+        : `<p class="lede">この日の国会の全構成です。衆議院はこの総選挙の当選者、参議院はこの日に在職していた議員を載せています。${nextTxt}</p>
+      <div class="totals"><span>衆議院 <b>${shu.length}</b></span><span>参議院 <b>${san.length}</b>${ss.seats-san.length>0?`（欠員 ${ss.seats-san.length}）`:""}</span><span>合わせて <b>${shu.length+san.length}</b></span></div>`}
       <div class="seg" role="group" aria-label="議席の見せ方">
         <button type="button" data-view="hemi" aria-pressed="${seatView==="hemi"}">議場図</button>
         <button type="button" data-view="grid" aria-pressed="${seatView==="grid"}">マス</button>
       </div>
     </header>
     ${houseBlock("shu","衆議院",shu,v.seats,"投票日の党派")}
-    ${houseBlock("san","参議院",san,ss.seats,`${groupsTxt}・投票日の党派`)}
+    ${preSan?"":houseBlock("san","参議院",san,ss.seats,`${groupsTxt}・投票日の党派`)}
     ${postsSection(v, [...shu,...san])}
     ${kinSection(v, [...shu,...san])}
     <section aria-labelledby="eh"><h2 id="eh">その後の異動</h2>
