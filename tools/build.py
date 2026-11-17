@@ -1012,7 +1012,8 @@ for p_ in persons:
     f = rec.get("first")
     if f and led and led[0] < f[0]:
         issues.append(f"初当選の年：{p_['name']} は記事では{f[0]}年だが、台帳に{led[0]}年の在職がある")
-        f = led
+        # 台帳でいちばん古い版の在職なら、それより前の当選がありうる（記事の選挙歴が戦後しか書いていない人など）ので空にする
+        f = None if ts[0]["election_id"] == f"shu-{min(nums):03d}" else led
     if not f and led and ts[0]["election_id"] not in FIRST_RANGE:
         f = led
     p_["first_elected"], p_["first_house"], p_["first_basis"] = (str(f[0]), f[1], {"選挙歴": "art", "情報欄": "art", "台帳": "doc"}[f[2]]) if f else ("", "", "")
