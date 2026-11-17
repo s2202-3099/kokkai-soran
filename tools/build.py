@@ -149,6 +149,11 @@ arts = json.load(open(f"{W}/person_articles.json"))
 if os.path.exists(f"{W}/person_articles_extra.json"):
     arts.update(json.load(open(f"{W}/person_articles_extra.json")))
 arts.update(json.load(open(f"{W2}/person_articles_san.json")))
+# 貴族院：投票日に在職していた議員の名簿（run_kizokuin.py の結果）と、その人たちの記事
+KZ = json.load(open(f"{W2}/kizokuin.json")) if os.path.exists(f"{W2}/kizokuin.json") else []
+if KZ:
+    for _t, _v in json.load(open(f"{W2}/person_articles_kz.json")).items():
+        arts.setdefault(_t, _v)
 kuri = {n: kuriage.extract(elec_art[n]["text"]) for n in elec_art}
 hos = {n: hosen.extract(elec_art[n]["text"]) for n in elec_art}
 
@@ -460,6 +465,8 @@ for n in SAN:
     for h in san_hos[n]:
         if h["winner_article"]:
             ensure_person(h["winner_article"], h["winner_name"])
+for m_ in KZ:
+    ensure_person(m_["title"], "")
 P = {p["person_id"]: p for p in persons}
 for a in aliases:
     a["person_id"] = pid_of[a["_key"]]
@@ -1793,6 +1800,49 @@ for o in orgs:
             q = next(z for z in orgs if z["org_id"] == oid_of[x])
             q["successors"] = ";".join(filter(None, [q["successors"], o["org_id"]]))
 
+# ---- 貴族院議員（選挙も選挙区もないので、在職は種別と期間だけ。ここまでの集計には入れない） ----
+# 所属は院内会派（政党ではない）。本人の記事に書かれた会派を、在職していた投票日の所属として入れる。
+KZ_DAYS = [ELECTIONS[n][1] for n in nums if ELECTIONS[n][1] < "1947-05-03"]
+kz_count = {}
+for name_ in ["研究会", "公正会", "交友倶楽部", "同和会", "同成会", "火曜会", "無所属倶楽部"]:
+    if KZ and name_ not in oid_of:
+        oid_of[name_] = OBOOK.get(name_)
+        orgs.append({"org_id": oid_of[name_], "name": name_, "kind": "院内会派", "lineage": "貴族院の会派", "founded": "",
+                     "dissolved": "1947-05-02", "predecessors": "", "successors": "",
+                     "source_id": add_source("Wikipedia 貴族院 (日本)", "https://ja.wikipedia.org/wiki/貴族院_(日本)", "wikipedia", "")})
+for m_ in KZ:
+    p = pid(m_["title"])
+    for sp in m_["spans"]:
+        note = "；".join(filter(None, [
+            (m_["pref"] + "選出") if sp["kind"] == "多額納税者議員" and m_["pref"] else "",
+            "終わりの日は記事になく、種別の決まり（終身の議員は貴族院の廃止まで、互選の議員は任期の終わりまで）による推定" if sp["est"] else "",
+            "始まりの日は記事では月・年まで" if len(sp["start"]) < 10 else "",
+            m_["note"]]))
+        terms.append({"term_id": TBOOK.next(p, "kizokuin", sp["kind"]), "person_id": p, "house": "貴", "election_id": "",
+                      "district_id": "", "peer_type": sp["kind"], "route": sp["kind"], "list_rank": "",
+                      "start_date": sp["start"], "end_date": sp["end"], "end_reason": sp["reason"],
+                      "basis": "est" if sp["est"] else "art", "source_id": P[p]["_src"], "note": note})
+        for D in KZ_DAYS:
+            if sp["start"] <= D and sp["end"] >= D[:len(sp["end"])]:
+                kz_count.setdefault(D, {}).setdefault(sp["kind"], 0)
+                kz_count[D][sp["kind"]] += 1
+                if m_["kaiha"]:
+                    affs.append({"person_id": p, "org_id": oid_of[m_["kaiha"][0]], "start_date": "", "end_date": "", "as_of": D,
+                                 "role": "", "basis": "art", "source_id": P[p]["_src"],
+                                 "note": "投票日の会派；本人の記事に書かれた所属会派（所属の時期は確かめていない）"
+                                         + (f"。記事にはほかに {'・'.join(m_['kaiha'][1:])}" if len(m_["kaiha"]) > 1 else "")})
+
+# 貴族院の議長・副議長（本人の記事の情報欄）。1946年4月10日は副議長が空席（酒井忠正氏が1945年12月17日に辞任、後任は1946年6月19日）
+KZ_POSTS = [("1946-04-10", "徳川圀順", "議長", "本人の記事の情報欄（第12代、1944年10月11日〜1946年6月19日）"),
+            ("1947-04-25", "徳川家正", "議長", "本人の記事の情報欄（第13代、1946年6月19日〜1947年5月2日）"),
+            ("1947-04-25", "徳川宗敬", "副議長", "本人の記事の情報欄（第15代、1946年6月19日〜1947年5月2日）")]
+for day_, name_, post_, why_ in KZ_POSTS if KZ else []:
+    if day_ in KZ_DAYS:
+        pid_ = pid(name_)
+        posts.append({"person_id": pid_, "kind": "貴族院の役職", "post": post_, "body": "貴族院", "start_date": "", "end_date": "",
+                      "as_of": day_, "source_id": P[pid_]["_src"], "note": why_})
+posts.sort(key=lambda r: r["as_of"])
+
 # ---- 書き出し ----
 def write(name, rows, cols):
     with open(os.path.join(OUT, name), "w", newline="", encoding="utf-8") as f:
@@ -1828,7 +1878,7 @@ missing_birth = [p["name"] for p in persons if not p["birth_date"]]
 missing_kana = [p["name"] for p in persons if not p["name_kana"]]
 report = {"persons": len(persons), "terms": len(terms), "affiliations": len(affs), "orgs": len(orgs),
           "sources": len(sources), "checks": checks, "missing_birth": missing_birth, "missing_kana": missing_kana,
-          "issues": issues, "by_elections": by_count, "factions": faction_count, "posts": len(posts), "kin": len(kin), "faction_stats": fac_stats, "faction_check": fac_check, "snap_conflict": snap_conflict, "exit_count": exit_count, "fill_count": fill_count, "fill_check": fill_check, "san_snapshot": san_snap, "tenure_check": tenure_check, "san_by_elections": by_count_san,
+          "issues": issues, "by_elections": by_count, "factions": faction_count, "posts": len(posts), "kin": len(kin), "faction_stats": fac_stats, "faction_check": fac_check, "snap_conflict": snap_conflict, "exit_count": exit_count, "fill_count": fill_count, "fill_check": fill_check, "san_snapshot": san_snap, "kizokuin": kz_count, "tenure_check": tenure_check, "san_by_elections": by_count_san,
           "san_routes": {f"{n}-{r}": c for (n, r), c in san_count.items()},
           "routes": {n: {k: sum(1 for t in terms if t["election_id"] == f"shu-{n:03d}" and t["route"] == k)
                          for k in ("小選挙区", "比例復活", "比例単独", "比例")} for n in nums}}
