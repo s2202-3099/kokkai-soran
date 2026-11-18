@@ -21,7 +21,8 @@ GOSEN = [f"{y}-07-09" for y in (1897, 1904, 1911, 1918, 1925, 1932, 1939)] + [AB
 TAGAKU = [f"{y}-09-28" for y in (1897, 1904, 1911, 1918, 1925, 1932, 1939)] + [ABOL]  # 多額納税者・学士院会員議員
 KOZOKU_END = "1946-05-23"      # 皇族議員が全員辞任した日
 GAICHI = ("1945-04-03", "1946-07-04")   # 朝鮮・台湾勅選議員の制度の始まりと終わり
-KAIHA = ["研究会", "公正会", "交友倶楽部", "同和会", "同成会", "火曜会", "無所属倶楽部"]
+KAIHA = ["研究会", "公正会", "交友倶楽部", "同和会", "同成会", "火曜会", "無所属倶楽部",
+         "茶話会", "土曜会", "木曜会", "無所属団"]   # 後の4つは明治・大正の会派（1928年までに解散・合同）
 
 # 本人の記事を読んで確かめた在職（読み取りでは決まらないもの）：記事名 → {kind, pref, spans:[(始まり, 終わり, 終わりの理由)], note}
 FIX = {
@@ -97,11 +98,14 @@ def close(kind, s, e, death):
 
 def kaiha(text):
     """本人の記事に書かれた院内会派（所属・属しの語の近くの会派名）。"""
+    text = re.sub(r"\[\[木曜会 \((?!貴族院)[^)\]]*\)\|[^\]]*\]\]", "（他の木曜会）", text)   # 陸軍・社会主義団体の木曜会
     body = kizokuin.strip(text[kizokuin.lead_pos(text):])
     found = []
-    for m in re.finditer("|".join(KAIHA), body):
-        ctx = body[max(0, m.start() - 12):m.end() + 14]
-        if re.search(r"所属|属し|属す|入会|に属|加入|会員", ctx) and m.group(0) not in found:
+    masked = body.replace("無所属", "無〇〇")   # 会派名の「無所属（団・倶楽部・派）」の「所属」は所属の語に数えない
+    pat = "|".join(("(?:(?<![一-龥ァ-ヶー])|(?<=会派)|(?<=\\d部))" + k) if k == "研究会" else k for k in KAIHA)   # 「憲法研究会」「史前研究会」は別（「院内会派研究会」「第3部研究会」は研究会）
+    for m in re.finditer(pat, body):
+        ctx = masked[max(0, m.start() - 12):m.start()] + "／" + masked[m.end():m.end() + 14]
+        if re.search(r"所属|属し|属す|入会|に属|加入|会員|を組織|に参加", ctx) and m.group(0) not in found:
             found.append(m.group(0))
     return found
 
@@ -122,8 +126,8 @@ def reason_of(text, e, death):
             return "資格消滅"
         if "失職" in seg:
             return "失職"
-        if re.search(r"死去|薨去|逝去", seg):
-            return "死去"
+        if re.search(r"死去|薨去|逝去", seg) and not (death and death != e):
+            return "死去"   # 没年月日の分かる人は、その日でなければ死去としない（任期の終わりと同じ月日に亡くなった人）
         if re.search(r"辞職|辞任|辞し|免", seg):
             return "辞職"
     if e in GOSEN or e in TAGAKU:

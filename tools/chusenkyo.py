@@ -107,6 +107,8 @@ def extract(text, named=False):
     """
     i = text.find("=== 当選者 ===")
     if i < 0:
+        i = text.find("== この選挙で当選 ==")   # 第9回の見出し
+    if i < 0:
         raise ValueError("「当選者」の見出しがない")
     end = text.find("\n==", i + 10)
     sec = text[i:end if end > 0 else len(text)]
