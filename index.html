@@ -247,7 +247,9 @@ async function load(){
 /* ---- 時点の計算 ---- */
 /* 衆院の総選挙の投票日には、その回の当選者だけを数える（1976年の任期満了選挙では、前の回の議員の任期が投票日の後まで続く） */
 const isShuVote = D => [...S.E.values()].some(e=>e.house==="衆" && e.date===D);
-const onAt = (t, D) => t.start<=D && (!t.end || t.end>=D) && !(t.house==="衆" && S.E.get(t.eid)?.date<D && isShuVote(D));
+/* 年・月までの日付（戦前の貴族院議員に多い）は、始まりはその年・月の終わり、終わりもその年・月の終わりとして比べる（台帳の集計と同じ） */
+const pad99 = d => d && d.length<10 ? d+"-99" : d;
+const onAt = (t, D) => pad99(t.start)<=D && (!t.end || pad99(t.end)>=D) && !(t.house==="衆" && S.E.get(t.eid)?.date<D && isShuVote(D));
 const inOffice = (house, D) => S.T.filter(t=>t.house===house && onAt(t, D));
 /* 当選時の党派：その在職の始まり（または選挙の投票日）の所属。行がなければ無所属で当選した人。 */
 /* 投票日の党派：参院議員はその日の所属（as_of の行）があればそれ、なければ当選時。衆院議員は当選時＝投票日。 */

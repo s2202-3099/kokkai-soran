@@ -54,6 +54,24 @@ FIX = {
 }
 
 
+GOSEN_YEARS = {x[:4] for x in GOSEN[:-1]} | {"1890"}
+TAGAKU_YEARS = {x[:4] for x in TAGAKU[:-1]} | {"1890"}
+
+
+def snap_start(kind, s):
+    """年だけの始まりで、その年が互選の年なら互選の日にする（伯子男爵は7月10日、多額納税者・学士院会員は9月29日）。"""
+    if len(s) == 4 and kind in ("伯爵議員", "子爵議員", "男爵議員") and s in GOSEN_YEARS:
+        return s + "-07-10"
+    if len(s) == 4 and kind in ("多額納税者議員", "帝国学士院会員議員") and s in TAGAKU_YEARS:
+        return s + "-09-29"
+    return s
+
+
+def pad_start(s):
+    """年・月までの始まりは、その年・月の終わりに始まったものとして比べる（その年のうちの投票日には数えない）。"""
+    return s if len(s) >= 10 else s + "-99"
+
+
 def close(kind, s, e, death):
     """終わりの日のない在職を種別の決まりで閉じる。(終わり, 理由, 推定かどうか)"""
     if e:
@@ -61,9 +79,9 @@ def close(kind, s, e, death):
             e = ABOL
         return e, "", False
     if kind in ("伯爵議員", "子爵議員", "男爵議員"):
-        e = next(x for x in GOSEN if x >= s)
+        e = next(x for x in GOSEN if x >= pad_start(s))
     elif kind in ("多額納税者議員", "帝国学士院会員議員"):
-        e = next(x for x in TAGAKU if x >= s)
+        e = next(x for x in TAGAKU if x >= pad_start(s))
     elif kind == "皇族議員":
         e = KOZOKU_END
     elif kind == "朝鮮・台湾勅選議員":
@@ -154,9 +172,10 @@ for v in by_page.values():
                 e = ABOL
             if e and r["death"] and r["death"] < e[:10].ljust(10, "9"):
                 e = r["death"]   # 議員の資格だけが残っていても、亡くなった日まで
+            s = snap_start(kind, s)
             e2, why, est = close(kind, s, e, r["death"])
-            if e2 < s[:len(e2)]:
-                continue
+            if e2 < s[:len(e2)] or e2 == s:
+                continue   # 終わりが始まりより前、または長さのない在職（「1939年7月9日任期満了」を始まりと読んだものなど）
             why = why or reason_of(v["text"], e2, r["death"])
             if kind == "皇族議員" and e2 == KOZOKU_END:
                 why = "辞職"   # 1946年5月23日、在職していた皇族議員の全員が辞任
@@ -184,7 +203,7 @@ json.dump(out, open(os.path.join(W2, "kizokuin.json"), "w"), ensure_ascii=False,
 json.dump(keep, open(os.path.join(W2, "person_articles_kz.json"), "w"), ensure_ascii=False)
 import collections
 for D in DAYS:
-    c = collections.Counter(sp["kind"] for m in out for sp in m["spans"] if sp["start"] <= D and sp["end"] >= D[:len(sp["end"])])
+    c = collections.Counter(sp["kind"] for m in out for sp in m["spans"] if pad_start(sp["start"]) <= D and sp["end"] >= D[:len(sp["end"])])
     print(D, sum(c.values()), dict(c))
 print("推定の終わり", sum(1 for m in out for sp in m["spans"] if sp["est"]), "会派なし", sum(1 for m in out if not m["kaiha"]))
 for p in problems:
