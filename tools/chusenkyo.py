@@ -100,8 +100,11 @@ def _district(content):
     return None
 
 
-def extract(text):
-    """当選者 [{pref, district, party, article, name, note}] と、気づいたことの一覧を返す。"""
+def extract(text, named=False):
+    """当選者 [{pref, district, party, article, name, note}] と、気づいたことの一覧を返す。
+
+    named=True は1900年の法による大選挙区制（第7〜13回）の表：区の見出しが番号でなく「郡部」「弘前」「札幌等」の名前。
+    """
     i = text.find("=== 当選者 ===")
     if i < 0:
         raise ValueError("「当選者」の見出しがない")
@@ -120,12 +123,17 @@ def extract(text):
             if h:
                 lk = LINK.search(c)
                 tgt = lk.group(1) if lk else c
-                if re.fullmatch(r"\s*(?:\[\[)?[^\]|]*?(都|道|府|県)(?:\]\])?\s*", c) and "区" not in c:
+                if re.fullmatch(r"\s*(?:\[\[)?[^\]|]*?(都|道|府|県)(?:\]\])?\s*", c) and "区" not in c \
+                        and not (named and not lk):   # 大選挙区の表では「全県」「京都」（市）の見出しを府県と取り違えない
                     pref = re.sub(r"[\[\]\s]", "", lk.group(1) if lk else c)
                     continue
                 d = _district(c)
                 if d:
                     cur = (d[0] or pref, d[1])
+                elif named and pref:
+                    nm = re.sub(r"\[\[(?:[^\]|]*\|)?([^\]]*)\]\]", r"\1", strip_refs(c)).strip()
+                    if nm:
+                        cur = (pref, nm)
                 continue
             if repeated or cur is None:
                 continue
