@@ -15,6 +15,11 @@ REASONS = ("自動失職", "当選無効", "選挙無効", "応召", "辞職", "
 
 def _cells(row):
     """表の1行をセルの並びにする（属性は落とす）。"""
+    return [(h, c) for h, c, _ in _cells_rs(row)]
+
+
+def _cells_rs(row):
+    """表の1行を (見出しか, 中身, rowspan) の並びにする。"""
     out = []
     for line in row.split("\n"):
         line = line.strip()
@@ -22,10 +27,14 @@ def _cells(row):
             continue
         head = line[0]
         for c in re.split(r"\|\||!!", line[1:]):
-            attr = re.match(r"\s*((?:[a-z-]+\s*=\s*\"[^\"]*\"\s*)+|(?:[a-z-]+\s*=\s*[^|\s\"]+\s*)+)\|(?!\|)", c)
+            # 属性（引用符あり・なしが混ざってもよい：「align="right" rowspan=2 | 5.10」）
+            attr = re.match(r"\s*((?:[a-z-]+\s*=\s*(?:\"[^\"]*\"|[^|\s\"]+)\s*)+)\|(?!\|)", c)
+            rs = 1
             if attr and not c.lstrip().startswith("[["):
+                m_ = re.search(r"rowspan\s*=\s*\"?(\d+)", attr.group(1))
+                rs = int(m_.group(1)) if m_ else 1
                 c = c[attr.end():]
-            out.append((head, c.strip()))
+            out.append((head, c.strip(), rs))
     return out
 
 
@@ -63,8 +72,26 @@ def extract(text, heading=r"補欠(?:選挙|当選)[^=\n]*"):
     table = strip_refs(text[start:end])
     table = re.sub(r"\{\{(?:efn2?|Refnest)[^{}]*(?:\{\{[^{}]*\}\}[^{}]*)*\}\}", "", table)
     out, year, prev_held = [], None, False
+    pend_kind, pend_dist = None, None   # 行をまたぐ（rowspan の）「選出」と「選挙区」のセル：[中身, 残りの行数]
     for row in table.split("\n|-")[1:]:
-        cells = _cells(row)
+        rcells = _cells_rs(row)
+        cells = [(h, c) for h, c, _ in rcells]
+        kind_here = dist_here = None
+        for h_, c_, rs_ in rcells:
+            if rs_ > 1 and h_ == "!" and dist_here is None:
+                dist_here = (_plain(c_), rs_)
+            elif rs_ > 1 and h_ == "|" and re.fullmatch(r"[^\[\]]{0,8}(選挙|当選|補欠|再|補充|復職|更正決定)", _plain(c_)):
+                kind_here = (_plain(c_), rs_)
+        use_kind = pend_kind[0] if pend_kind and pend_kind[1] > 0 and not kind_here else None
+        use_dist = pend_dist[0] if pend_dist and pend_dist[1] > 0 and not dist_here else None
+        if pend_kind:
+            pend_kind[1] -= 1
+        if pend_dist:
+            pend_dist[1] -= 1
+        if kind_here:
+            pend_kind = [kind_here[0], kind_here[1] - 1]
+        if dist_here:
+            pend_dist = [dist_here[0], dist_here[1] - 1]
         i = 0
         # 年（rowspan で省略されることがある）
         if i < len(cells) and cells[i][0] == "|" and re.fullmatch(r"(?:\[\[\d{4}年日本の補欠選挙\|)?\d{4}(?:\]\])?\s*", cells[i][1]):
@@ -81,6 +108,9 @@ def extract(text, heading=r"補欠(?:選挙|当選)[^=\n]*"):
         elif i < len(cells) and cells[i][0] == "|" and re.fullmatch(r"[-－‐ー]", cells[i][1]):
             i += 1  # 未実施の行の「-」だけの月日
         cont = False
+        if (i >= len(cells) or cells[i][0] != "!") and use_dist and (md or out):
+            # 選挙区のセルが上の行から続いている行（「! rowspan="2" | 広島県郡部」の二行目）
+            cells = cells[:i] + [("!", use_dist)] + cells[i:]
         if i >= len(cells) or cells[i][0] != "!":
             # 選挙区の見出しセルがない行（同じ日の続き）は、前の日付を使う
             if out and md is None and cells and cells[0][0] == "!":
@@ -106,6 +136,8 @@ def extract(text, heading=r"補欠(?:選挙|当選)[^=\n]*"):
             if rest and p0 not in ("新", "前", "元", "現") and re.fullmatch(r"[^\[\]]{0,8}(選挙|当選|補欠|再|補充|復職|更正決定)", p0):
                 kind = {"補欠": "補欠選挙", "再": "再選挙"}.get(p0, p0)   # 「[[第16回…|合併選挙]]」のようなリンクも。「復職」は応召した議員の復帰
                 rest = rest[1:]
+            elif use_kind:
+                kind = {"補欠": "補欠選挙", "再": "再選挙"}.get(use_kind, use_kind)   # 上の行から続く「選出」のセル
         ri = next((k for k in range(len(rest) - 1, -1, -1) if REASON.search(rest[k])), None)
         if ri is None:
             continue
