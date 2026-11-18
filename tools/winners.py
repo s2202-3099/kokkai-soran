@@ -352,7 +352,7 @@ def summary_table(text):
     if not sec:
         # 戦前の記事（第20回）は「党派別獲得議席」の表だけ。与党・野党の小計の行は飛ばす
         sec = section(text, r"党派別獲得議席")
-        if not sec or "第20回衆議院議員総選挙" not in text[:3000]:
+        if not sec or not re.search(r"\{\{electiontable\|第(?:1?\d|20)回衆議院議員総選挙\}\}", sec, re.I):
             return {}
         out = {}
         for row in strip_refs(sec).split("\n|-"):

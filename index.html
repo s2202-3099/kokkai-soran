@@ -407,7 +407,7 @@ function renderVersion(v){
       <p>当選回数は台帳に入っている範囲（${coverTxt()}）で数えています。それより前の当選は入っていません。</p>
       ${v.n<=43&&v.n>=41?`<p>第41〜43回の比例当選者は、比例復活か比例単独かがまだ分かっていないので「比例」とだけ書いています。</p>`:""}
       ${v.date>="1955-11-15"?`<p>${facNote(v)}</p>`:""}
-      <p>初当選の年と前職は、本人の記事の選挙歴・情報欄によります。${v.n===Math.min(...S.versions.map(x=>x.n))?`この版は台帳でいちばん古く、記事に戦前の選挙歴が書かれていない人は、${v.date.slice(0,4)}年より前に当選していたかどうか分からないので「不明」にしています。`:""}</p>
+      <p>初当選の年と前職は、本人の記事の選挙歴・情報欄によります。${v.n===Math.min(...S.versions.map(x=>x.n))?`台帳は${v.date.slice(0,4)}年の総選挙からなので、記事に戦前の選挙歴が書かれていない人は、それより前に当選していたかどうか分からず「不明」にしています。`:""}</p>
     </section>`;
   bindTables();
   document.querySelectorAll(".seg button[data-kzby]").forEach(b=>b.addEventListener("click",()=>{
