@@ -352,6 +352,18 @@ def summary_table(text):
     if not sec:
         # 戦前の記事（第20回）は「党派別獲得議席」の表だけ。与党・野党の小計の行は飛ばす
         sec = section(text, r"党派別獲得議席")
+        if sec and "{|" not in sec and re.search(r"^\*.*\d+議席", sec, re.M):
+            # 第15回は箇条書き（「** [[憲政会]]　146議席」「* 中立（無所属）67議席」）。「合計」の行は飛ばす
+            out = {}
+            for line in strip_refs(sec).split("\n"):
+                m = re.match(r"\*+\s*(?:\[\[(?:[^\]|]*\|)?([^\]]+)\]\]|([^\s　（\d]+))[^\d\n]*?(\d+)議席", line)
+                if m and "合計" not in line:
+                    name = (m.group(1) or m.group(2)).strip()
+                    name = "無所属" if name == "中立" else name
+                    if name in ("護憲三派",):
+                        continue
+                    out[canon(name)[0]] = out.get(canon(name)[0], 0) + int(m.group(3))
+            return out
         if not sec or not re.search(r"\{\{electiontable\|第(?:1?\d|20)回衆議院議員総選挙\}\}", sec, re.I):
             return {}
         out = {}
