@@ -74,6 +74,8 @@ def _section_of(text, pos):
     if not hs:
         return None
     h = hs[-1]
+    if re.search(r"発足時|改造後|改正後|再編前|再編後", h) and len(hs) > 1:
+        h = hs[-2]   # 「内閣の顔ぶれ・人事」の下の「内閣発足時」「内閣改造後」（第2次大隈内閣）
     return next((v for k, v in SECTIONS.items() if k in h), None), h
 
 
