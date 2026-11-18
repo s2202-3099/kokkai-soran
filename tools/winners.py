@@ -351,12 +351,13 @@ def summary_table(text):
     sec = section(text, r"党派別当選者内訳")
     if not sec:
         # 戦前の記事（第20回）は「党派別獲得議席」の表だけ。与党・野党の小計の行は飛ばす
-        sec = section(text, r"党派別獲得議席")
-        if sec and "{|" not in sec and re.search(r"^\*.*\d+議席", sec, re.M):
+        sec = section(text, r"党派別獲得議席数?")
+        if sec and "{|" not in sec and re.search(r"^\*.*\d+(?:議席)?\s*$", strip_refs(sec), re.M):
             # 第15回は箇条書き（「** [[憲政会]]　146議席」「* 中立（無所属）67議席」）。「合計」の行は飛ばす
+            # 第10回は「議席」のない箇条書き（「* [[憲政本党]]　　{{0}}70」「* 無所属　　　{{0}}64」）
             out = {}
-            for line in strip_refs(sec).split("\n"):
-                m = re.match(r"\*+\s*(?:\[\[(?:[^\]|]*\|)?([^\]]+)\]\]|([^\s　（\d]+))[^\d\n]*?(\d+)議席", line)
+            for line in re.sub(r"\{\{0\}\}", "", strip_refs(sec)).split("\n"):
+                m = re.match(r"\*+\s*(?:\[\[(?:[^\]|]*\|)?([^\]]+)\]\]|([^\s　（\d]+))[^\d\n]*?(\d+)(?:議席|\s*$)", line)
                 if m and "合計" not in line:
                     name = (m.group(1) or m.group(2)).strip()
                     name = "無所属" if name == "中立" else name

@@ -73,11 +73,14 @@ def extract(text, heading=r"補欠(?:選挙|当選)[^=\n]*"):
     table = re.sub(r"\{\{(?:efn2?|Refnest)[^{}]*(?:\{\{[^{}]*\}\}[^{}]*)*\}\}", "", table)
     out, year, prev_held = [], None, False
     pend_kind, pend_dist = None, None   # 行をまたぐ（rowspan の）「選出」と「選挙区」のセル：[中身, 残りの行数]
+    pend_why = None                     # 行をまたぐ「欠員事由」のセル（第10回の「rowspan="2" | 1909.7.3選挙法第11条該当」）
     for row in table.split("\n|-")[1:]:
         rcells = _cells_rs(row)
         cells = [(h, c) for h, c, _ in rcells]
-        kind_here = dist_here = None
+        kind_here = dist_here = why_here = None
         for h_, c_, rs_ in rcells:
+            if rs_ > 1 and h_ == "|" and REASON.search(c_):
+                why_here = (c_, rs_)
             if rs_ > 1 and h_ == "!" and dist_here is None:
                 dist_here = (_plain(c_), rs_)
             elif rs_ > 1 and h_ == "|" and re.fullmatch(r"[^\[\]]{0,8}(選挙|当選|補欠|再|補充|復職|更正決定)", _plain(c_)):
@@ -88,6 +91,11 @@ def extract(text, heading=r"補欠(?:選挙|当選)[^=\n]*"):
             pend_kind[1] -= 1
         if pend_dist:
             pend_dist[1] -= 1
+        use_why = pend_why[0] if pend_why and pend_why[1] > 0 and not why_here else None
+        if pend_why:
+            pend_why[1] -= 1
+        if why_here:
+            pend_why = [why_here[0], why_here[1] - 1]
         if kind_here:
             pend_kind = [kind_here[0], kind_here[1] - 1]
         if dist_here:
@@ -139,6 +147,9 @@ def extract(text, heading=r"補欠(?:選挙|当選)[^=\n]*"):
             elif use_kind:
                 kind = {"補欠": "補欠選挙", "再": "再選挙"}.get(use_kind, use_kind)   # 上の行から続く「選出」のセル
         ri = next((k for k in range(len(rest) - 1, -1, -1) if REASON.search(rest[k])), None)
+        if ri is None and use_why:
+            rest = rest + [use_why]   # 欠員事由のセルが上の行から続いている
+            ri = len(rest) - 1
         if ri is None:
             continue
         rm = REASON.search(rest[ri])

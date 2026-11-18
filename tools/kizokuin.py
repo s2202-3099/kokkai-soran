@@ -189,9 +189,11 @@ def text_spans(text, death=""):
         hit = bool(re.search(r"貴族院|皇族議員|勅選議員|爵議員|多額納税者議員", sent))
         ds = _scan(sent, ctx)
         if not hit:
-            if carry and re.search(r"まで(?:在任|在職|務め)|議員を辞(?:職|任)|議員辞(?:職|任)|免.{0,4}議員|議員[^、]{0,6}(?:資格|失職)", sent) \
+            if carry and re.search(r"まで(?:\d+期)?(?:在任|在職|務め)|議員を辞(?:職|任)|議員辞(?:職|任)|免.{0,4}議員|議員[^、]{0,6}(?:資格|失職)", sent) \
                     and not re.search(OTHER_JOB, sent):
                 for d, a, b in ds:
+                    if re.match(r"\s*(?:から|より)", sent[b:]):
+                        continue   # 「同年9月29日から1925年9月28日まで2期在任」の始まりのほう
                     if re.search(END_W, sent[b:b + 30]):
                         events.append((d, "e"))
             carry = max(carry - 1, 0)

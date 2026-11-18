@@ -472,7 +472,7 @@ function kizokuBlock(rows, D, v){
         comp.groups.map(g=>`<span><i class="sw" style="${comp.style.get(g.org||"無所属")}"></i>${esc(nm(g))} <b>${g.n}</b></span>`).join(""), hemiItems, cells)}
       ${figs("kind", bandHTML(kcomp, rows.length),
         kcomp.groups.map(g=>`<span><i class="sw" style="${kcomp.style.get(g.org)}"></i>${esc(g.name)} <b>${g.n}</b></span>`).join(""), khemi, kcells)}
-      <p class="note">貴族院議員は選挙区から選ばれるのではなく、種別ごとに議員になる道が違います。皇族・公爵・侯爵は成年（爵位は満30歳）で自動的に、伯爵・子爵・男爵は同じ爵位の華族の互選（任期7年）、勅選は内閣の奏薦による終身、多額納税者と帝国学士院会員は互選（任期7年）です。在職の期間は本人の記事から読んだもので、当時の議員名簿とは突き合わせていません。「会派」「種別」のボタンで図の分け方を切り替えられます。色は見分けるためのもので、政党の系譜とは関係ありません。</p>
+      <p class="note">貴族院議員は選挙区から選ばれるのではなく、種別ごとに議員になる道が違います。皇族・公爵・侯爵は成年（爵位は満30歳）で自動的に、伯爵・子爵・男爵は同じ爵位の華族の互選（任期7年）、勅選は内閣の奏薦による終身、多額納税者と帝国学士院会員は互選（任期7年）です。在職の期間は本人の記事から読んだもので、当時の議員名簿とは突き合わせていません。会派も本人の記事に書かれたもので、投票日にまだ結成されていなかった会派（公正会は1919年、火曜会は1927年など）は数えていません。「会派」「種別」のボタンで図の分け方を切り替えられます。色は見分けるためのもので、政党の系譜とは関係ありません。</p>
       <div class="controls">
         <input type="search" id="f-kz" placeholder="名簿を絞り込む（名前・種別・府県・前職）" aria-label="貴族院の名簿を絞り込む">
         <div class="chips" role="group" aria-label="種別で絞り込む">${kindN.map(([k,n])=>`<button class="chip" type="button" data-for="kz" data-kind="${esc(k)}" aria-pressed="false"><i class="sw" style="${kcomp.style.get(k)}"></i>${esc(k)} <b>${n}</b></button>`).join("")}</div>
