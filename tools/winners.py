@@ -350,7 +350,19 @@ def summary_table(text):
     """記事の「党派別当選者内訳」の表から {党派: 計} を読む（検証用）。"""
     sec = section(text, r"党派別当選者内訳")
     if not sec:
-        return {}
+        # 戦前の記事（第20回）は「党派別獲得議席」の表だけ。与党・野党の小計の行は飛ばす
+        sec = section(text, r"党派別獲得議席")
+        if not sec or "第20回衆議院議員総選挙" not in text[:3000]:
+            return {}
+        out = {}
+        for row in strip_refs(sec).split("\n|-"):
+            m = re.search(r'align="left"[^|\n]*\|\s*(?:\[\[(?:[^\]|]*\|)?([^\]]+)\]\]|([^\n|]+))', row)
+            n = re.search(r"'''(\d+)'''", row)
+            if m and n:
+                name = (m.group(1) or m.group(2)).strip()
+                if name not in ("与党", "野党", "欠員", "総計"):
+                    out[canon(name)[0]] = out.get(canon(name)[0], 0) + int(n.group(1))
+        return out
     out = {}
     for row in strip_refs(sec).split("\n|-"):
         m = re.search(r'align="left"\s*\|\s*(?:\[\[(?:[^\]|]*\|)?([^\]]+)\]\]|([^\n|]+))', row)

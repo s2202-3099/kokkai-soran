@@ -103,7 +103,7 @@ def extract(text, heading=r"補欠(?:選挙|当選)[^=\n]*"):
             rest = [c for _, c in cells[i + 1:]]
             kind = "補欠選挙"
             p0 = _plain(rest[0]) if rest else ""
-            if rest and p0 not in ("新", "前", "元", "現") and re.fullmatch(r"[^\[\]]{0,8}(選挙|当選|補欠|再|補充|復職)", p0):
+            if rest and p0 not in ("新", "前", "元", "現") and re.fullmatch(r"[^\[\]]{0,8}(選挙|当選|補欠|再|補充|復職|更正決定)", p0):
                 kind = {"補欠": "補欠選挙", "再": "再選挙"}.get(p0, p0)   # 「[[第16回…|合併選挙]]」のようなリンクも。「復職」は応召した議員の復帰
                 rest = rest[1:]
         ri = next((k for k in range(len(rest) - 1, -1, -1) if REASON.search(rest[k])), None)
