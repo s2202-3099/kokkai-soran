@@ -26,6 +26,8 @@ KAIHA = ["研究会", "公正会", "交友倶楽部", "同和会", "同成会", 
 
 # 本人の記事を読んで確かめた在職（読み取りでは決まらないもの）：記事名 → {kind, pref, spans:[(始まり, 終わり, 終わりの理由)], note}
 FIX = {
+    "福原実": {"spans": [("1890-09-29", "1900-09-24", "死去")],
+               "note": "本人の記事（「貴族院議員（1890年9月29日 - 1900年9月24日）を歴任」。元老院議官などの日付と同じ文にあるため読み違える。在職中に死去の分類）"},
     "堀田正養": {"spans": [("1890-07-10", "1911-05-09", "死去")],
                  "note": "本人の記事（1890年7月10日に選ばれ「連続して3期にわたって議員に選ばれた」。在職中に死去の分類）"},
     "大谷五平": {"kind": "多額納税者議員", "pref": "福島県", "spans": [("1939-09-29", "1946-04-23", "辞職")],
@@ -67,6 +69,11 @@ def snap_start(kind, s):
         return s + "-07-10"
     if len(s) == 4 and kind in ("多額納税者議員", "帝国学士院会員議員") and s in TAGAKU_YEARS:
         return s + "-09-29"
+    # 互選の月（6〜7月）までの始まりも、任期の始まりの日にする（「1897年7月、多額納税者議員に互選」→ 9月29日から）
+    if len(s) == 7 and kind in ("伯爵議員", "子爵議員", "男爵議員") and s[:4] in GOSEN_YEARS and s[5:] in ("06", "07"):
+        return s[:4] + "-07-10"
+    if len(s) == 7 and kind in ("多額納税者議員", "帝国学士院会員議員") and s[:4] in TAGAKU_YEARS and s[5:] in ("06", "07", "08", "09"):
+        return s[:4] + "-09-29"
     return s
 
 
@@ -181,6 +188,8 @@ for v in by_page.values():
             if e and r["death"] and r["death"] < e[:10].ljust(10, "9"):
                 e = r["death"]   # 議員の資格だけが残っていても、亡くなった日まで
             s = snap_start(kind, s)
+            if s and s < "1890":
+                continue   # 貴族院のできる前（「1874年に戸長を務めたのを皮切りに…貴族院多額納税者議員なども務め」の1874年）
             e2, why, est = close(kind, s, e, r["death"])
             if e2 < s[:len(e2)] or e2 == s:
                 continue   # 終わりが始まりより前、または長さのない在職（「1939年7月9日任期満了」を始まりと読んだものなど）
@@ -192,6 +201,9 @@ for v in by_page.values():
     spans.sort(key=lambda x: x[0])
     kept = []
     for sp in spans:
+        if kept and sp[0] == kept[-1][0] and kept[-1][3] and not sp[3]:
+            kept[-1] = sp   # 同じ始まり（「1904年6月に互選」と「同年9月29日から」）なら、終わりの日が書かれたほう
+            continue
         if kept and kept[-1][0][:len(sp[0])] <= sp[0] <= kept[-1][1][:len(sp[0])]:
             continue
         kept.append(sp)

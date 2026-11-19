@@ -76,7 +76,18 @@ def _section_of(text, pos):
     h = hs[-1]
     if re.search(r"発足時|改造後|改正後|再編前|再編後", h) and len(hs) > 1:
         h = hs[-2]   # 「内閣の顔ぶれ・人事」の下の「内閣発足時」「内閣改造後」（第2次大隈内閣）
-    return next((v for k, v in SECTIONS.items() if k in h), None), h
+    kind = next((v for k, v in SECTIONS.items() if k in h), None)
+    if not kind:
+        # 「=== 国務大臣 ===」の下の「==== 伊藤内閣 ====」（第2次伊藤内閣）：親の見出しをたどる
+        lv = re.findall(r"^(=+)\s*[^=\n]+?\s*=+\s*$", text[:pos], re.M)
+        cur = len(lv[-1])
+        for lev, hh in zip(reversed(lv[:-1]), reversed(hs[:-1])):
+            if len(lev) < cur:
+                cur = len(lev)
+                kind = next((v for k, v in SECTIONS.items() if k in hh), None)
+                if kind:
+                    return kind, hh, h   # 3つ目：表のすぐ上の小見出し（使うかどうかは呼び出し側で決める）
+    return kind, h
 
 
 def extract(text):
@@ -85,7 +96,8 @@ def extract(text):
         sec = _section_of(text, pos)
         if not sec or not sec[0]:
             continue
-        kind, head = sec
+        kind, head = sec[0], sec[1]
+        sub = sec[2] if len(sec) > 2 else ""   # 親の見出しをたどって見つけた表（「伊藤内閣」「黒田内閣総理大臣臨時兼任」）
         ph = [h for h in re.findall(r"^=+\s*([^=\n]+?)\s*=+\s*$", text[:pos], re.M) if re.search(r"発足時|改造後|改正後|再編前|再編後", h)]
         phase = ph[-1] if ph else ""   # 一つの記事に発足時・改造後の表が並ぶ内閣（幣原内閣・第1次吉田内閣）
         g = wtable.grid(tb)
@@ -113,7 +125,7 @@ def extract(text):
             fac = _faction(row[c_aff][1]) if c_aff is not None and c_aff < len(row) else None
             out.append({"kind": kind, "section": head, "post": role_lines[0] if role_lines else "",
                         "extra": "・".join(role_lines[1:]), "article": person[0], "name": person[1],
-                        "start": s, "end": e, "faction": fac, "note": plain(note).replace("\n", "　"), "phase": phase})
+                        "start": s, "end": e, "faction": fac, "note": plain(note).replace("\n", "　"), "phase": phase, "sub": sub})
     # 箇条書きの副大臣・大臣政務官
     for m in re.finditer(r"^\*\s*'''\[\[([^\]|]+)(?:\|([^\]]+))?\]\]'''\s*[-－–]\s*(.+)$", text, re.M):
         sec = _section_of(text, m.start())
