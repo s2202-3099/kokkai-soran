@@ -231,6 +231,28 @@ function kzTenure(p, upTo){
   return {days, y, m, approx, first:ts[0]?.t.start||"", last:ts.length?(ts.map(x=>x.t.end||"1947-05-02").sort().pop()):"",
           routes:[...new Set(ts.map(x=>x.t.route))]};
 }
+/* 互選の議員（伯子男爵・多額納税者・帝国学士院会員。任期7年）は期数も数える。期は互選の回ごとの任期
+   （伯子男爵は1890・1897…1939年の7月10日から、多額納税者・学士院会員は9月29日から。最後の1939年の期は貴族院の廃止まで）。
+   補欠で入った期も1期と数える。日の分からない始まり・終わりは、期を多く数えないほうに寄せる */
+const KZ_GOSEN = {"伯爵議員":"07-10","子爵議員":"07-10","男爵議員":"07-10","多額納税者議員":"09-29","帝国学士院会員議員":"09-29"};
+const KZ_PERIOD_YEARS = [1890,1897,1904,1911,1918,1925,1932,1939];
+function kzKi(p, upTo){
+  const out = new Map();
+  const lo = d => d.length===4 ? d+"-12-31" : d.length===7 ? d+"-28" : d;   // 始まりは遅いほうへ
+  const hi = d => d.length===4 ? d+"-01-01" : d.length===7 ? d+"-01" : d;   // 終わりは早いほうへ
+  for(const t of p.terms){
+    const md = KZ_GOSEN[t.route]; if(!md || !t.start) continue;
+    const s = lo(t.start); if(upTo && s>upTo) continue;
+    let e = t.end ? hi(t.end) : "1947-05-02"; if(upTo && e>upTo) e = upTo;
+    const set = out.get(t.route) || new Set();
+    KZ_PERIOD_YEARS.forEach((y,i)=>{
+      const ps = `${y}-${md}`, pe = i+1<KZ_PERIOD_YEARS.length ? `${KZ_PERIOD_YEARS[i+1]}-${md}` : "1947-05-03";
+      if(s < pe && e >= ps) set.add(y);
+    });
+    out.set(t.route, set);
+  }
+  return new Map([...out].filter(([,s])=>s.size).map(([k,s])=>[k,s.size]));
+}
 const tenureTxt = (k, short) => !k.days ? "" : (k.approx?"約":"") + (k.y ? `${k.y}年${!short&&k.m?k.m+"か月":""}` : (short?"1年未満":`${k.m}か月`));
 
 function age(birth, at){
@@ -488,7 +510,7 @@ function kizokuBlock(rows, D, v){
       <td>${kinCell(r.p)}</td>
       <td class="num">${sdate(r.t.start)}</td>
       <td class="num">${sdate(r.t.end)}<div class="sub">${esc(r.t.reason||"")}${est}</div></td>
-      <td class="r num">${tenureTxt(kzTenure(r.p, D), true)}</td>
+      <td class="r num">${tenureTxt(kzTenure(r.p, D), true)}${(n=>n?`<div class="sub">${n}期</div>`:"")(kzKi(r.p, D).get(r.t.route))}</td>
       <td class="job" title="${esc(r.p.prevJob||"")}">${esc(r.p.prevJob||"")}</td></tr>`;
   }).join("");
   return `<section class="house" id="h-kz" aria-labelledby="hh-kz">
@@ -504,7 +526,7 @@ function kizokuBlock(rows, D, v){
         <div class="chips" role="group" aria-label="種別で絞り込む">${kindN.map(([k,n])=>`<button class="chip" type="button" data-for="kz" data-kind="${esc(k)}" aria-pressed="false"><i class="sw" style="${kcomp.style.get(k)}"></i>${esc(k)} <b>${n}</b></button>`).join("")}</div>
         <div class="chips" role="group" aria-label="会派で絞り込む">${comp.groups.map(g=>`<button class="chip" type="button" data-for="kz" data-org="${esc(g.org||"")}" aria-pressed="false"><i class="sw" style="${comp.style.get(g.org||"無所属")}"></i>${esc(nm(g))} <b>${g.n}</b></button>`).join("")}</div>
       </div>
-      <div class="tablebox"><table id="t-kz"><thead><tr><th>氏名</th><th class="r">年齢</th><th>種別</th><th>会派</th><th>役職</th><th title="国会議員の親族がいれば濃い字で">親族</th><th>就任</th><th>退任</th><th class="r" title="この日までの貴族院議員としての在職（通算）">在職</th><th>前職</th></tr></thead><tbody>${body}</tbody></table></div>
+      <div class="tablebox"><table id="t-kz"><thead><tr><th>氏名</th><th class="r">年齢</th><th>種別</th><th>会派</th><th>役職</th><th title="国会議員の親族がいれば濃い字で">親族</th><th>就任</th><th>退任</th><th class="r" title="この日までの貴族院議員としての在職（通算）。互選の議員（伯子男爵・多額納税者・学士院会員）は期数も">在職</th><th>前職</th></tr></thead><tbody>${body}</tbody></table></div>
     </section>`;
 }
 function tableBlock(key, rows, D, comp, v){
@@ -615,7 +637,7 @@ function renderPerson(p){
       <div><dt>性別</dt><dd>${sex}</dd></div>
       <div><dt>初当選</dt><dd>${p.first?`${p.first}年（${p.firstHouse==="衆"?"衆議院":"参議院"}）`:(p.terms.length&&p.terms.every(t=>t.house==="貴")?"なし（貴族院議員のみ）":"不明")}</dd></div>
       ${shuN||sanN?`<div><dt>当選</dt><dd>衆議院 ${shuN}回 ・ 参議院 ${sanN}回</dd></div>`:""}
-      ${kzN?(k=>`<div><dt>貴族院</dt><dd>在職 ${tenureTxt(k,false)}（${esc(k.routes.join("・"))}、${+k.first.slice(0,4)}〜${+k.last.slice(0,4)}年の通算）</dd></div>`)(kzTenure(p)):""}
+      ${kzN?(k=>{const ki=kzKi(p);return `<div><dt>貴族院</dt><dd>在職 ${tenureTxt(k,false)}（${esc(k.routes.map(r=>ki.has(r)?`${r} ${ki.get(r)}期`:r).join("・"))}、${+k.first.slice(0,4)}〜${+k.last.slice(0,4)}年の通算）</dd></div>`;})(kzTenure(p)):""}
       <div><dt>記事</dt><dd>${wiki?`<a href="${wiki}" target="_blank" rel="noopener">Wikipedia</a>`:""}${p.qid?` ・ <a href="https://www.wikidata.org/wiki/${esc(p.qid)}" target="_blank" rel="noopener">${esc(p.qid)}</a>`:""}</dd></div>
     </dl>
     ${p.prevJob?`<section aria-labelledby="jh"><h2 id="jh">前職</h2><p>${esc(p.prevJob).replace(/／/g,"<br>")}</p><p class="note">本人の記事の情報欄による。</p></section>`:""}
