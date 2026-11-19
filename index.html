@@ -388,7 +388,7 @@ function renderVersion(v){
       <p class="eyebrow">第${v.no}版 ・ 第${v.n}回衆議院議員総選挙の投票日</p>
       <h1>${jdate(D)}</h1>
       ${preSan
-        ? `<p class="lede">この日の帝国議会の構成です。衆議院はこの総選挙の当選者、貴族院はこの日に在職していた議員を載せています。${D==="1947-04-25"?"参議院は5日前の4月20日に最初の選挙を終えていましたが、議員の任期は憲法施行の5月3日からなので、この日の上院はまだ貴族院です。":""}${nextTxt}</p>
+        ? `<p class="lede">この日の帝国議会の構成です。衆議院はこの総選挙の当選者、貴族院はこの日に在職していた議員を載せています。${D==="1947-04-25"?"参議院は5日前の4月20日に最初の選挙を終えていましたが、議員の任期は憲法施行の5月3日からなので、この日の上院はまだ貴族院です。":""}${D==="1898-08-10"?"憲政党は、選挙記事の当選者表の塗り分けにしたがって旧自由党系と旧進歩党系に分けて数えています（同じ年の10月に旧進歩党系が憲政本党として分かれます）。":""}${nextTxt}</p>
       <div class="totals"><span>衆議院 <b>${shu.length}</b>${v.seats-shu.length>0?`（欠員 ${v.seats-shu.length}）`:""}</span><span>貴族院 <b>${kz.length}</b></span><span>合わせて <b>${new Set([...shu,...kz].map(r=>r.p.id)).size}</b></span></div>`
         : `<p class="lede">この日の国会の全構成です。衆議院はこの総選挙の当選者、参議院はこの日に在職していた議員を載せています。${nextTxt}</p>
       <div class="totals"><span>衆議院 <b>${shu.length}</b></span><span>参議院 <b>${san.length}</b>${ss.seats-san.length>0?`（欠員 ${ss.seats-san.length}）`:""}</span><span>合わせて <b>${shu.length+san.length}</b></span></div>`}

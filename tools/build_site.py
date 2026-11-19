@@ -6,6 +6,7 @@
 import csv
 import json
 import os
+import re
 import sys
 
 D, OUT = sys.argv[1], sys.argv[2]
@@ -26,6 +27,16 @@ terms = [[t["term_id"], t["person_id"], t["house"], t["election_id"], t["distric
           t["end_date"], t["end_reason"], t["basis"], t["source_id"], t.get("note", "")] for t in rows("terms.csv")]
 affs = [[a["person_id"], a["org_id"], a["start_date"], a["end_date"], a["basis"], a["source_id"], a["note"], a.get("as_of", "")]
         for a in rows("affiliations.csv")]
+# 第6回（1898年8月）の憲政党は、当選者表で旧自由党系・旧進歩党系に塗り分けられている（台帳の所属は「憲政党」で、系統は注記）。
+# サイトでは議場図・党派の内訳・名簿で二つに分けて見せるため、表示用の党を二つ作って、その回の当選時の所属だけ付け替える
+for a in affs:
+    m = re.search(r"当選者表では憲政党の(旧自由党系|旧進歩党系)", a[6])
+    if m:
+        sub = f"{a[1]}-{'j' if m.group(1) == '旧自由党系' else 's'}"
+        if sub not in orgs:
+            base = orgs[a[1]]
+            orgs[sub] = [f"{base[0]}（{m.group(1)}）", base[1], base[2], base[3], base[4]]
+        a[1] = sub
 sources = {s["source_id"]: [s["title"], s["url"], s["revision_id"], s["accessed"]] for s in rows("sources.csv")}
 aliases = [[a["person_id"], a["alias"]] for a in rows("aliases.csv")]
 posts = [[r["person_id"], r["kind"], r["post"], r["body"], r["as_of"], r["note"], r["source_id"]] for r in rows("posts.csv")]

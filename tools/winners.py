@@ -357,7 +357,7 @@ def summary_table(text):
             # 第10回は「議席」のない箇条書き（「* [[憲政本党]]　　{{0}}70」「* 無所属　　　{{0}}64」）
             out = {}
             for line in re.sub(r"\{\{0\}\}", "", strip_refs(sec)).split("\n"):
-                m = re.match(r"\*+\s*(?:\[\[(?:[^\]|]*\|)?([^\]]+)\]\]|([^\s　（\d]+))[^\d\n]*?(\d+)(?:議席|\s*$)", line)
+                m = re.match(r"\*+\s*(?:\[\[(?:[^\]|]*\|)?([^\]]+)\]\]|([^\s　（\d:：]+))[^\d\n]*?(\d+)(?:議席|\s*$)", line)   # 第5回は「* 無所属:23」
                 if m and "合計" not in line:
                     name = (m.group(1) or m.group(2)).strip()
                     name = "無所属" if name == "中立" else name
