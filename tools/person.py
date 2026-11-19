@@ -84,7 +84,21 @@ def kana(t, ib):
     if k and re.fullmatch(r"[ぁ-ゖー\s　・]+", k):
         return re.sub(r"[\s　]+", " ", k)
     m = re.search(r"'''[^']+'''\s*（([ぁ-ゖー\s　]+)[、，,）]", t)
-    return re.sub(r"[\s　]+", " ", m.group(1)).strip() if m else ""
+    if m:
+        return re.sub(r"[\s　]+", " ", m.group(1)).strip()
+    # 出典・注のテンプレートを外した冒頭で読む（「（かんどう<ref>…</ref> さいいち / しんどう…」「（國、はら くに、」「（さかい たかよし{{R|…}} / けいぎ」）
+    i = t.find("'''")
+    lead = t[max(i, 0):max(i, 0) + 2500]
+    lead = re.sub(r"<ref[^>]*/>|<ref.*?</ref>|\{\{(?:R|r|sfn|Sfn|efn|Refnest|refnest)\|[^{}]*\}\}", "", lead, flags=re.S)
+    m = re.search(r"'''[^']+'''\s*（(?:[^、（）ぁ-ゖ]{1,8}、)?\s*([ぁ-ゖー\s　/／]+?)\s*[、，,）]", lead)
+    if not m:
+        return ""
+    # 読みが二通りあるとき（「うまおか / まおか じろう」「さかい たかよし / けいぎ」）は最初の読み
+    pieces = [x.split() for x in re.split(r"[/／]", m.group(1)) if x.strip()]
+    if not pieces:
+        return ""
+    first = pieces[0] if len(pieces[0]) >= 2 else pieces[0] + pieces[-1][-1:]
+    return " ".join(first[:2]) if len(first) >= 2 else ""
 
 
 def sex(t):
@@ -221,12 +235,22 @@ def post_tenure(ib, label):
     return out
 
 
+def _place(t, ib):
+    """出生地欄の都道府県（これまでの読み方）。なければ本文の「…に生まれる」、それもなければ出身地（place.py）。"""
+    p = birth_pref(ib)
+    if p:
+        return {"birth_pref": p, "birth_pref_basis": "出生地欄"}
+    import place
+    p, why = place.birth_place(t, ib, field)
+    return {"birth_pref": p, "birth_pref_basis": why}
+
+
 def extract(rec):
     t = rec["text"]
     ib = infobox(t)
     b, bsrc = birth(t, ib)
     return {"title": rec["title"], "pageid": rec["pageid"], "qid": rec.get("qid") or "", "revid": rec.get("revid"),
-            "birth": b, "birth_src": bsrc, "kana": kana(t, ib), "sex": sex(t), "birth_pref": birth_pref(ib),
+            "birth": b, "birth_src": bsrc, "kana": kana(t, ib), "sex": sex(t), **_place(t, ib),
             "elections": election_rows(t), "san_tenure": house_tenure(ib), "first": first_win(t, ib),
             "prev_job": prev_job(ib), "disambiguation": rec.get("disambiguation", False),
             "length": rec.get("length")}

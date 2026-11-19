@@ -410,7 +410,7 @@ function renderVersion(v){
     </section>
     <section class="caveat note" aria-label="この版の読み方">
       ${preSan?"":`<p>参議院の党派は、この投票日の所属です。国会会議録でこの日までの最後の発言（なければ直後の発言）の会派を引き、当選時の党派と照らして決めました。会派に合えば当選時の党のまま、合わなければ本人の記事の所属政党の並びや会派の主な党に移し、決め手のないものは「推定」としています。大臣・副大臣などとして話した発言は会派欄が当てにならないので使っていません。議長・副議長は会派を離れるので、歴代議長・副議長の表の出身党派です。人物のページで、一人ずつの会派と発言の日付を見られます。</p>`}
-      <p>当選回数は台帳に入っている範囲（${coverTxt()}）で数えています。それより前の当選は入っていません。</p>
+      <p>当選回数と初当選は台帳の在職から数えています。台帳には1890年の第1回からのすべての衆院総選挙と、1947年の第1回からのすべての参院通常選挙（と記事にある補欠選挙・繰上当選）が入っています。繰上当選は議員になった年を初当選としています。</p>
       ${v.n<=43&&v.n>=41?`<p>第41〜43回の比例当選者は、比例復活か比例単独かがまだ分かっていないので「比例」とだけ書いています。</p>`:""}
       ${v.date>="1955-11-15"?`<p>${facNote(v)}</p>`:""}
       <p>初当選の年と前職は、本人の記事の選挙歴・情報欄によります。${v.n===Math.min(...S.versions.map(x=>x.n))?`台帳は${v.date.slice(0,4)}年の総選挙からなので、記事に戦前の選挙歴が書かれていない人は、それより前に当選していたかどうか分からず「不明」にしています。`:""}</p>
@@ -518,7 +518,7 @@ function tableBlock(key, rows, D, comp, v){
       <input type="search" id="f-${key}" placeholder="名簿を絞り込む（名前・選挙区・派閥・前職）" aria-label="${isShu?"衆議院":"参議院"}の名簿を絞り込む">
       <div class="chips" role="group" aria-label="党派で絞り込む">${comp.groups.map(g=>`<button class="chip" type="button" data-for="${key}" data-org="${esc(g.org||"")}" aria-pressed="false"><i class="sw" style="${comp.style.get(g.org||"無所属")}"></i>${esc(g.name)}</button>`).join("")}</div>
     </div>
-    <div class="tablebox"><table id="t-${key}"><thead><tr><th>氏名</th><th class="r">年齢</th><th>党派</th><th>派閥</th><th>役職</th><th title="国会議員の親族がいれば濃い字で">親族</th><th>選挙区</th>${isShu?"":"<th>改選年</th>"}<th>当選の経路</th><th class="r" title="台帳の範囲での回数">当選回数</th><th class="r">初当選</th><th>前職</th></tr></thead><tbody>${body}</tbody></table></div>`;
+    <div class="tablebox"><table id="t-${key}"><thead><tr><th>氏名</th><th class="r">年齢</th><th>党派</th><th>派閥</th><th>役職</th><th title="国会議員の親族がいれば濃い字で">親族</th><th>選挙区</th>${isShu?"":"<th>改選年</th>"}<th>当選の経路</th><th class="r">当選回数</th><th class="r">初当選</th><th>前職</th></tr></thead><tbody>${body}</tbody></table></div>`;
 }
 function routeLabel(t){ return t.route==="比例" && t.house==="衆" ? "比例（復活か単独か未判明）" : t.route; }
 function bindTables(){
@@ -591,8 +591,8 @@ function renderPerson(p){
       <div><dt>生年月日</dt><dd>${p.birth?jdate(p.birth):"未判明"}</dd></div>
       <div><dt>出生地</dt><dd>${esc(p.pref||"未判明")}</dd></div>
       <div><dt>性別</dt><dd>${sex}</dd></div>
-      <div><dt>初当選</dt><dd>${p.first?`${p.first}年（${p.firstHouse==="衆"?"衆議院":"参議院"}）`:"不明"}</dd></div>
-      <div><dt>当選（台帳の範囲）</dt><dd>衆議院 ${shuN}回 ・ 参議院 ${sanN}回${kzN?` ・ 貴族院議員（${[...new Set(p.terms.filter(t=>t.house==="貴").map(t=>t.route))].join("・")}）`:""}</dd></div>
+      <div><dt>初当選</dt><dd>${p.first?`${p.first}年（${p.firstHouse==="衆"?"衆議院":"参議院"}）`:(p.terms.length&&p.terms.every(t=>t.house==="貴")?"なし（貴族院議員のみ）":"不明")}</dd></div>
+      <div><dt>当選</dt><dd>衆議院 ${shuN}回 ・ 参議院 ${sanN}回${kzN?` ・ 貴族院議員（${[...new Set(p.terms.filter(t=>t.house==="貴").map(t=>t.route))].join("・")}）`:""}</dd></div>
       <div><dt>記事</dt><dd>${wiki?`<a href="${wiki}" target="_blank" rel="noopener">Wikipedia</a>`:""}${p.qid?` ・ <a href="https://www.wikidata.org/wiki/${esc(p.qid)}" target="_blank" rel="noopener">${esc(p.qid)}</a>`:""}</dd></div>
     </dl>
     ${p.prevJob?`<section aria-labelledby="jh"><h2 id="jh">前職</h2><p>${esc(p.prevJob).replace(/／/g,"<br>")}</p><p class="note">本人の記事の情報欄による。</p></section>`:""}

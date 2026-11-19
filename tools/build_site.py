@@ -20,7 +20,9 @@ elections = [[e["election_id"], e["house"], int(e["number"]), e["date"], e["kind
              for e in rows("elections.csv")]
 orgs = {o["org_id"]: [o["name"], o["lineage"], o["predecessors"], o["successors"], o["kind"]] for o in rows("orgs.csv")}
 districts = {d["district_id"]: d["name"] for d in rows("districts.csv")}
-persons = [[p["person_id"], p["name"], p["name_kana"], p["birth_date"], p["death_date"], p["sex"], p["birth_pref"],
+# 出生地が「出身」から読んだもの（生まれた土地と違うことがある）は、そのことを添えて見せる
+persons = [[p["person_id"], p["name"], p["name_kana"], p["birth_date"], p["death_date"], p["sex"],
+            p["birth_pref"] + ("（出身地）" if p["birth_pref"] and p.get("birth_pref_basis") == "出身" else ""),
             p["jawiki_title"], p["wikidata_qid"], p.get("first_elected", ""), p.get("first_house", ""),
             p.get("prev_job", ""), p.get("kin_checked", "")] for p in rows("persons.csv")]
 terms = [[t["term_id"], t["person_id"], t["house"], t["election_id"], t["district_id"], t["route"], t["start_date"],

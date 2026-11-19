@@ -113,6 +113,12 @@ SOUMU_FILES = {45: ("soumu/t45.xls", "https://www.soumu.go.jp/main_content/00003
 TODAY = date.today().isoformat()
 
 winners = {int(k): v for k, v in json.load(open(f"{W}/winners.json")).items()}
+# 当選者表のリンクが同名の別人の記事を指しているもの（回, リンク先）→ 本人の記事
+WINNER_LINK_FIX = {(n_, "三浦久"): "三浦久 (政治家)" for n_ in (33, 34, 35, 36, 37)}   # 「三浦久」はフォークシンガーの記事
+for n_, rows_ in winners.items():
+    for r_ in rows_:
+        if (n_, r_.get("article")) in WINNER_LINK_FIX:
+            r_["article"] = WINNER_LINK_FIX[(n_, r_["article"])]
 for n, rows in winners.items():
     for r in rows:
         if n == 22:
@@ -273,7 +279,9 @@ SAN_PARTY_FIX = {(15, "アントニオ猪木"): "スポーツ平和党", (15, "�
 # 台帳の在職と議員の記事の情報欄（参議院議員の退任日）を突き合わせて見つけ、本人の記事の本文で理由を確かめたもの。
 # (組の回次, 記事名, 欠員の日, 理由, 注記)
 # 選挙記事の補欠当選の箇条書きに欠員の日がないもの：(組の回次, 氏名) → (欠員の日, 理由, 注記)。本人の記事の本文による
-SAN_VACANCY_DATE = {(1, "竹腰徳蔵"): ("1947-07", "失職", "公職追放による（本人の記事は「当選の3か月後」。補欠選挙は8月15日）"),
+SAN_VACANCY_DATE = {(5, "秋山長造"): ("1964-10-18", "辞職", "岡山県知事選挙の立候補による（本人の記事の情報欄。補欠選挙は12月9日）"),
+                    (5, "加藤武徳"): ("1964-10", "辞職", "岡山県知事選挙の立候補による（本人の記事は1964年とだけ。同じ知事選に出た秋山長造氏の辞任は10月18日）"),
+                    (1, "竹腰徳蔵"): ("1947-07", "失職", "公職追放による（本人の記事は「当選の3か月後」。補欠選挙は8月15日）"),
                     (3, "鈴木一"): ("1958-04", "辞職", "第28回衆院選立候補のため（選挙記事。日は書かれていない。解散は4月25日、補欠選挙は6月22日）"),
                     (3, "鈴木一 (政治家)"): ("1958-04", "辞職", "第28回衆院選立候補のため（選挙記事。日は書かれていない。解散は4月25日、補欠選挙は6月22日）"),
                     (4, "大沢雄一"): ("1960-10", "辞職", "第29回衆院選立候補のため（本人の記事は1960年10月。補欠選挙は投票日と同じ11月20日）"),
@@ -437,6 +445,12 @@ san_kuri = {n: kuriage.extract(san_art[n]["text"]) for n in SAN}
 import sanin1947
 san_hos = {n: (sanin1947.hosen(san_art[n]["text"]) if n == 1 else hosen.extract(san_art[n]["text"]) or hosen.bullets(san_art[n]["text"]))
            for n in SAN}
+# 記事の補欠当選の欄にない議席の入れ替わり（当選訴訟の判決で当選者が替わったものなど）
+SAN_HOSEN_ADD = {2: [{"date": "1952-01", "kind": "更正決定", "district": "島根県", "winner_article": "小瀧彬", "winner_name": "小瀧彬",
+                      "winner_party": "自由党", "old_party": "国民民主党", "old_article": "桜内義雄", "old_name": "桜内義雄",
+                      "vacated_date": "1951-12", "reason": "当選無効"}]}   # 本人と櫻内義雄の記事・島根県選挙区の記事（日は不明、月まで）
+for n_, adds_ in SAN_HOSEN_ADD.items():
+    san_hos[n_] = san_hos[n_] + [dict(a_) for a_ in adds_]
 # 箇条書きの補欠当選（第14回など）は当選者の党派が書かれていないので、あとで本人の記事の所属政党欄の最初の党を入れる
 SAN_BULLET = {n for n in SAN if n != 1 and not hosen.extract(san_art[n]["text"]) and san_hos[n]}
 for n in san_hos:
@@ -505,7 +519,8 @@ def ensure_person(article, shown):
                          rec["revid"] if rec else "")
         persons.append({"person_id": pid, "name": base,
                         "name_kana": rec["kana"] if rec else "", "birth_date": rec["birth"] if rec else "",
-                        "death_date": "", "birth_pref": rec["birth_pref"] if rec else "", "sex": rec["sex"] if rec else "",
+                        "death_date": "", "birth_pref": rec["birth_pref"] if rec else "",
+                        "birth_pref_basis": rec["birth_pref_basis"] if rec else "", "sex": rec["sex"] if rec else "",
                         "jawiki_title": key, "jawiki_pageid": rec["pageid"] if rec else "",
                         "wikidata_qid": rec["qid"] if rec else "", "note": "", "_src": src})
 
@@ -1073,21 +1088,26 @@ for n in nums:
             diff.append(f"女性 公式{women_off}・台帳{women_mine}")
     checks.append((n, basis_name, sum(mine.values()), diff))
 
-# ---- 人物：初当選の年と前職（本人の記事から） ----
-FIRST_RANGE = {"shu-001", "shu-002", "shu-003", "shu-004", "shu-005", "shu-006", "shu-007", "shu-008", "shu-009", "shu-010", "shu-011", "shu-012", "shu-013", "shu-014", "shu-015", "shu-016", "shu-017", "shu-018", "shu-019", "shu-020", "shu-021", "shu-022", "shu-023", "shu-024", "shu-025", "shu-026", "san-001", "shu-027", "san-002", "shu-028", "san-003", "shu-029", "san-004", "shu-030", "san-005", "shu-031", "san-006", "shu-032", "san-007", "shu-033", "shu-034", "san-008", "san-009", "san-010"}  # 台帳でいちばん古い回。ここが最初の在職でも、それより前の当選がありうる
+# ---- 人物：初当選の年と前職 ----
+# 第1回（1890年）からのすべての衆院総選挙と、第1回（1947年）からのすべての参院通常選挙（と記事にある補欠選挙・繰上当選）が
+# 台帳に入ったので、初当選は台帳の最初の衆参の在職で決める（それより前の当選はありえない）。
+# 本人の記事（選挙歴・情報欄）と同じ年なら、記事でも確かめたものとする。記事と食い違うものは一覧に出す
+# （繰上当選は、記事が選挙の年を、台帳が議員になった年を書くことが多い）。貴族院だけの人は空（選挙で選ばれた議員ではない）。
+first_conflicts = []
 for p_ in persons:
     rec = info.get(p_["jawiki_title"]) or {}
-    ts = sorted((t for t in terms if t["person_id"] == p_["person_id"]), key=lambda t: t["start_date"])
-    led = (int(ts[0]["start_date"][:4]), ts[0]["house"], "台帳") if ts else None
+    ts = sorted((t for t in terms if t["person_id"] == p_["person_id"] and t["house"] in ("衆", "参")), key=lambda t: t["start_date"])
     f = rec.get("first")
-    if f and led and led[0] < f[0]:
-        issues.append(f"初当選の年：{p_['name']} は記事では{f[0]}年だが、台帳に{led[0]}年の在職がある")
-        # 台帳でいちばん古い版の在職なら、それより前の当選がありうる（記事の選挙歴が戦後しか書いていない人など）ので空にする
-        # 戦前の在職なら、台帳にない更に前の総選挙で当選していたかもしれない（記事の選挙歴が戦後しか書いていない人など）ので空にする
-        f = None if ts[0]["start_date"] < "1946" else led
-    if not f and led and ts[0]["election_id"] not in FIRST_RANGE:
-        f = led
-    p_["first_elected"], p_["first_house"], p_["first_basis"] = (str(f[0]), f[1], {"選挙歴": "art", "情報欄": "art", "台帳": "doc"}[f[2]]) if f else ("", "", "")
+    if ts:
+        led = (int(ts[0]["start_date"][:4]), ts[0]["house"])
+        basis = "art" if f and f[0] == led[0] else "doc"
+        if f and f[0] != led[0]:
+            first_conflicts.append((p_["name"], f[0], led[0], ts[0]["route"], ts[0]["election_id"]))
+        p_["first_elected"], p_["first_house"], p_["first_basis"] = str(led[0]), led[1], basis
+    else:
+        p_["first_elected"], p_["first_house"], p_["first_basis"] = "", "", ""
+for nm_, fa_, fl_, rt_, el_ in first_conflicts:
+    issues.append(f"初当選の年：{nm_} は記事では{fa_}年、台帳の最初の在職は{fl_}年（{el_}・{rt_}）。台帳の年にした")
     p_["prev_job"] = rec.get("prev_job", "")
 
 # ---- 派閥：自民党版（2009年・2026年）の分類を取り込む ----
@@ -2071,11 +2091,11 @@ for name, rows in [("aliases.csv", aliases), ("persons.csv", persons), ("orgs.cs
                    ("districts.csv", districts), ("terms.csv", terms), ("affiliations.csv", affs),
                    ("sources.csv", sources), ("posts.csv", posts), ("kin.csv", kin)]:
     cols = header(name)
-    extra = {"terms.csv": ["note"], "persons.csv": ["first_elected", "first_house", "first_basis", "prev_job", "kin_checked"],
+    extra = {"terms.csv": ["note"], "persons.csv": ["birth_pref_basis", "first_elected", "first_house", "first_basis", "prev_job", "kin_checked"],
              "affiliations.csv": ["as_of"], "posts.csv": ["kind", "as_of", "note"], "kin.csv": ["national"]}.get(name, [])
     for c in extra:
         if c not in cols:
-            pos = {"persons.csv": lambda: cols.index("note"), "affiliations.csv": lambda: cols.index("role"),
+            pos = {"persons.csv": lambda: (cols.index("birth_pref") + 1 if c == "birth_pref_basis" else cols.index("note")), "affiliations.csv": lambda: cols.index("role"),
                    "posts.csv": lambda: (cols.index("post") if c == "kind" else (cols.index("source_id") if c == "as_of" else len(cols))),
                    "kin.csv": lambda: cols.index("source_id")}.get(name, lambda: len(cols))()
             cols.insert(pos, c)

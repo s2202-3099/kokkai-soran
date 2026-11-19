@@ -177,6 +177,9 @@ def extract(text, heading=r"補欠(?:選挙|当選|・更正)[^=\n]*"):   # 第2
 BULLET = re.compile(r"^\*\s*(\S+?)選挙区\s*\[\[([^\]|]+)(?:\|([^\]]+))?\]\]（([^）]*)）\s*→\s*\[\[([^\]|]+)(?:\|([^\]]+))?\]\]（([^）]*)）", re.M)
 
 
+MULTI = re.compile(r"^\*\s*(\S+?)選挙区\s*((?:\[\[[^\]]+\]\]\s*[、,]\s*)+\[\[[^\]]+\]\])（([^）]*)）\s*→\s*((?:\[\[[^\]]+\]\]\s*[、,]\s*)+\[\[[^\]]+\]\])（([^）]*)）", re.M)
+
+
 def bullets(text, heading=r"補欠当選"):
     """古い参院選の記事の、箇条書きの補欠当選（* 山口選挙区 [[江島淳]]（1987.5.25死去）→[[二木秀夫]]（1987.7.12補欠当選））。
     当選者の党派は書かれていないので空。欠員の日が書かれていない行（「知事選立候補による退職」）は vacated_date を空にする。"""
@@ -186,7 +189,19 @@ def bullets(text, heading=r"補欠当選"):
     nxt = re.search(r"^=+[^=\n]+=+\s*$", text[m.end():], re.M)
     sec = text[m.end(): m.end() + (nxt.start() if nxt else len(text))]
     out = []
-    for b in BULLET.finditer(strip_refs(sec)):
+    sec = strip_refs(sec)
+    # 二人まとめての行（* 岡山選挙区 [[秋山長造]]、[[加藤武徳]]（共に…辞任）→[[秋山長造]]、[[木村睦男]]（1964.12.9補欠当選））
+    for b in MULTI.finditer(sec):
+        olds, why, news, won = LINK.findall(b.group(2)), b.group(3), LINK.findall(b.group(4)), b.group(5)
+        rm, wm = REASON.search(why), REASON.search(won)
+        for (oa, on), (na, nn) in zip(olds, news):
+            out.append({"date": f"{int(wm[1]):04d}-{int(wm[2]):02d}-{int(wm[3]):02d}" if wm else "",
+                        "kind": "再選挙" if "再選挙" in won else "補欠選挙", "district": b.group(1) + "県",
+                        "winner_article": na.strip(), "winner_name": (nn or na).strip(), "winner_party": "", "old_party": "",
+                        "old_article": oa.strip(), "old_name": (on or oa).strip(),
+                        "vacated_date": f"{int(rm[1]):04d}-{int(rm[2]):02d}-{int(rm[3]):02d}" if rm else "",
+                        "reason": _reason(why)})
+    for b in BULLET.finditer(sec):
         why, won = b.group(4), b.group(7)
         rm, wm = REASON.search(why), REASON.search(won)
         out.append({"date": f"{int(wm[1]):04d}-{int(wm[2]):02d}-{int(wm[3]):02d}" if wm else "",
