@@ -60,7 +60,7 @@ def _reason(s):
     return _plain(s)
 
 
-def extract(text, heading=r"補欠(?:選挙|当選)[^=\n]*"):
+def extract(text, heading=r"補欠(?:選挙|当選|・更正)[^=\n]*"):   # 第2回は「補欠・更正当選者」
     m = re.search(r"^=+\s*" + heading + r"=+\s*$", text, re.M)
     if not m:
         return []
@@ -83,7 +83,7 @@ def extract(text, heading=r"補欠(?:選挙|当選)[^=\n]*"):
                 why_here = (c_, rs_)
             if rs_ > 1 and h_ == "!" and dist_here is None:
                 dist_here = (_plain(c_), rs_)
-            elif rs_ > 1 and h_ == "|" and re.fullmatch(r"[^\[\]]{0,8}(選挙|当選|補欠|再|補充|復職|更正決定)", _plain(c_)):
+            elif rs_ > 1 and h_ == "|" and re.fullmatch(r"[^\[\]]{0,8}(選挙|当選|補欠|再|補充|復職|更正決定|更正)", _plain(c_)):
                 kind_here = (_plain(c_), rs_)
         use_kind = pend_kind[0] if pend_kind and pend_kind[1] > 0 and not kind_here else None
         use_dist = pend_dist[0] if pend_dist and pend_dist[1] > 0 and not dist_here else None
@@ -141,11 +141,13 @@ def extract(text, heading=r"補欠(?:選挙|当選)[^=\n]*"):
             rest = [c for _, c in cells[i + 1:]]
             kind = "補欠選挙"
             p0 = _plain(rest[0]) if rest else ""
-            if rest and p0 not in ("新", "前", "元", "現") and re.fullmatch(r"[^\[\]]{0,8}(選挙|当選|補欠|再|補充|復職|更正決定)", p0):
-                kind = {"補欠": "補欠選挙", "再": "再選挙"}.get(p0, p0)   # 「[[第16回…|合併選挙]]」のようなリンクも。「復職」は応召した議員の復帰
+            if rest and p0 not in ("新", "前", "元", "現") and re.fullmatch(r"[^\[\]]{0,8}(選挙|当選|補欠|再|補充|復職|更正決定|更正)", p0):
+                kind = {"補欠": "補欠選挙", "再": "再選挙", "更正": "更正決定"}.get(p0, p0)   # 「[[第16回…|合併選挙]]」のようなリンクも。「復職」は応召した議員の復帰
                 rest = rest[1:]
             elif use_kind:
                 kind = {"補欠": "補欠選挙", "再": "再選挙"}.get(use_kind, use_kind)   # 上の行から続く「選出」のセル
+        if rest and LINK.search(rest[0]) and not cont:
+            rest = [""] + rest   # 「新旧別」の列のない表（第2回）：当選者のセルから始まる
         ri = next((k for k in range(len(rest) - 1, -1, -1) if REASON.search(rest[k])), None)
         if ri is None and use_why:
             rest = rest + [use_why]   # 欠員事由のセルが上の行から続いている
