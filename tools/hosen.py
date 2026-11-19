@@ -107,12 +107,13 @@ def extract(text, heading=r"補欠(?:選挙|当選|・更正)[^=\n]*"):   # 第2
             i += 1
         elif i < len(cells) and cells[i][0] == "|" and cells[i][1] == "":
             i += 1
-        md = None
+        md = mon = None
         if i < len(cells) and re.fullmatch(r"\d{1,2}\.\d{1,2}", cells[i][1]):
             md = cells[i][1]
             i += 1
         elif i < len(cells) and re.fullmatch(r"\d{1,2}", cells[i][1]):
-            i += 1  # 「10」だけの月（実施せず）
+            mon = int(cells[i][1])
+            i += 1  # 「10」だけの月（実施せず。第1回の千葉4区のように、日の分からない補欠選挙も）
         elif i < len(cells) and cells[i][0] == "|" and re.fullmatch(r"[-－‐ー]", cells[i][1]):
             i += 1  # 未実施の行の「-」だけの月日
         cont = False
@@ -129,6 +130,8 @@ def extract(text, heading=r"補欠(?:選挙|当選|・更正)[^=\n]*"):   # 第2
                 continue
         if md:
             last_date = f"{year:04d}-{int(md.split('.')[0]):02d}-{int(md.split('.')[1]):02d}"
+        elif mon:
+            last_date = f"{year:04d}-{mon:02d}"   # 月までしか分からない
         elif out and i == 0:
             last_date = out[-1]["date"]
         else:

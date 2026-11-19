@@ -249,6 +249,9 @@ async function load(){
 /* 衆院の総選挙の投票日には、その回の当選者だけを数える（1976年の任期満了選挙では、前の回の議員の任期が投票日の後まで続く） */
 const isShuVote = D => [...S.E.values()].some(e=>e.house==="衆" && e.date===D);
 /* 年・月までの日付（戦前の貴族院議員に多い）は、始まりはその年・月の終わり、終わりもその年・月の終わりとして比べる（台帳の集計と同じ） */
+/* 第1回の投票日（1890年7月1日）には貴族院の議員がまだいないので、最初の帝国議会の開会日の構成を参考として出す */
+const KZ_REF = {"1890-07-01":"1890-11-29"};
+const kzDay = D => KZ_REF[D] || D;
 const pad99 = d => d && d.length<10 ? d+"-99" : d;
 const onAt = (t, D) => pad99(t.start)<=D && (!t.end || pad99(t.end)>=D) && !(t.house==="衆" && S.E.get(t.eid)?.date<D && isShuVote(D));
 const inOffice = (house, D) => S.T.filter(t=>t.house===house && onAt(t, D));
@@ -320,7 +323,7 @@ function renderTop(){
     const shu = inOffice("衆", v.date), {seats} = sanSeats(v.date), san = inOffice("参", v.date);
     const cs = composition(shu.map(t=>({org:partyAt(t,v.date)?.org})));
     const cn = composition(san.map(t=>({org:partyAt(t,v.date)?.org})));
-    const kz = inOffice("貴", v.date), ck = kzBy==="kind" ? kindComposition(kz.map(t=>({t}))) : composition(kz.map(t=>({org:partyAt(t,v.date)?.org})));
+    const kz = inOffice("貴", kzDay(v.date)), ck = kzBy==="kind" ? kindComposition(kz.map(t=>({t}))) : composition(kz.map(t=>({org:partyAt(t,kzDay(v.date))?.org})));
     return `<a class="vrow" href="#${v.id}">
       <div class="vdate">${jdate(v.date)}<small>第${v.n}回衆院選の投票日・第${v.no}版</small></div>
       <div class="vbands">
@@ -353,7 +356,7 @@ function memberRows(house, D){
 function renderVersion(v){
   const D=v.date;
   $("#crumbs").innerHTML = `<span class="crumb">${jdate(D)}</span>`;
-  const shu=memberRows("衆",D), san=memberRows("参",D), ss=sanSeats(D), kz=memberRows("貴",D);
+  const shu=memberRows("衆",D), san=memberRows("参",D), ss=sanSeats(D), kz=memberRows("貴",kzDay(D));
   const all=composition([...shu,...san]); // 色をそろえるため両院で一度に決める
   const order=(r)=>S.distOrder.get(r.t.did) ?? 99999;
   const sortRows=(rows)=>rows.sort((a,b)=>{
@@ -388,7 +391,7 @@ function renderVersion(v){
       <p class="eyebrow">第${v.no}版 ・ 第${v.n}回衆議院議員総選挙の投票日</p>
       <h1>${jdate(D)}</h1>
       ${preSan
-        ? `<p class="lede">この日の帝国議会の構成です。衆議院はこの総選挙の当選者、貴族院はこの日に在職していた議員を載せています。${D==="1947-04-25"?"参議院は5日前の4月20日に最初の選挙を終えていましたが、議員の任期は憲法施行の5月3日からなので、この日の上院はまだ貴族院です。":""}${D==="1898-08-10"?"憲政党は、選挙記事の当選者表の塗り分けにしたがって旧自由党系と旧進歩党系に分けて数えています（同じ年の10月に旧進歩党系が憲政本党として分かれます）。":""}${nextTxt}</p>
+        ? `<p class="lede">この日の帝国議会の構成です。衆議院はこの総選挙の当選者、貴族院はこの日に在職していた議員を載せています。${D==="1947-04-25"?"参議院は5日前の4月20日に最初の選挙を終えていましたが、議員の任期は憲法施行の5月3日からなので、この日の上院はまだ貴族院です。":""}${D==="1890-07-01"?"この日にはまだ貴族院の議員がいない（伯子男爵議員の互選は7月10日、勅選・多額納税者議員は9月29日）ので、貴族院は参考として、最初の帝国議会が開会した1890年11月29日に在職していた議員を載せています。":""}${D==="1898-08-10"?"憲政党は、選挙記事の当選者表の塗り分けにしたがって旧自由党系と旧進歩党系に分けて数えています（同じ年の10月に旧進歩党系が憲政本党として分かれます）。":""}${nextTxt}</p>
       <div class="totals"><span>衆議院 <b>${shu.length}</b>${v.seats-shu.length>0?`（欠員 ${v.seats-shu.length}）`:""}</span><span>貴族院 <b>${kz.length}</b></span><span>合わせて <b>${new Set([...shu,...kz].map(r=>r.p.id)).size}</b></span></div>`
         : `<p class="lede">この日の国会の全構成です。衆議院はこの総選挙の当選者、参議院はこの日に在職していた議員を載せています。${nextTxt}</p>
       <div class="totals"><span>衆議院 <b>${shu.length}</b></span><span>参議院 <b>${san.length}</b>${ss.seats-san.length>0?`（欠員 ${ss.seats-san.length}）`:""}</span><span>合わせて <b>${shu.length+san.length}</b></span></div>`}
@@ -398,7 +401,7 @@ function renderVersion(v){
       </div>
     </header>
     ${houseBlock("shu","衆議院",shu,v.seats,"投票日の党派")}
-    ${preSan?kizokuBlock(kz,D,v):houseBlock("san","参議院",san,ss.seats,`${groupsTxt}・投票日の党派`)}
+    ${preSan?kizokuBlock(kz,kzDay(D),v):houseBlock("san","参議院",san,ss.seats,`${groupsTxt}・投票日の党派`)}
     ${postsSection(v, [...kz,...shu,...san])}
     ${kinSection(v, [...kz.filter(r=>!shu.some(x=>x.p.id===r.p.id)),...shu,...san])}
     <section aria-labelledby="eh"><h2 id="eh">その後の異動</h2>
@@ -467,7 +470,7 @@ function kizokuBlock(rows, D, v){
       <td class="job" title="${esc(r.p.prevJob||"")}">${esc(r.p.prevJob||"")}</td></tr>`;
   }).join("");
   return `<section class="house" id="h-kz" aria-labelledby="hh-kz">
-      <div class="house-head"><h2 id="hh-kz">貴族院</h2><span class="sub num">在職 ${rows.length}</span><span class="sub">${kzBy==="kind"?"議員の種別":"投票日の院内会派（本人の記事に書かれたもの）"}</span>
+      <div class="house-head"><h2 id="hh-kz">貴族院</h2><span class="sub num">在職 ${rows.length}</span><span class="sub">${D!==v.date?`参考：${jdate(D)}（最初の帝国議会の開会日）・`:""}${kzBy==="kind"?"議員の種別":`${D!==v.date?"この日":"投票日"}の院内会派（本人の記事に書かれたもの）`}</span>
         <div class="seg" role="group" aria-label="貴族院の分け方" style="margin-left:auto;align-self:center"><button type="button" data-kzby="kaiha" aria-pressed="${kzBy==="kaiha"}">会派</button><button type="button" data-kzby="kind" aria-pressed="${kzBy==="kind"}">種別</button></div></div>
       ${figs("kaiha", bandHTML(comp, rows.length),
         comp.groups.map(g=>`<span><i class="sw" style="${comp.style.get(g.org||"無所属")}"></i>${esc(nm(g))} <b>${g.n}</b></span>`).join(""), hemiItems, cells)}
@@ -536,8 +539,10 @@ function eventsBlock(D, Dn){
   const inRange = d => d && d>D && (!Dn || d<Dn);
   for(const t of S.T){
     if(t.house==="貴"){   // 貴族院：廃止の日の一斉の退任は並べない。新しい就任は「就任」
-      if(inRange(t.end) && t.reason!=="貴族院廃止") ev.push({d:t.end,k:"out",lab:t.reason||"退任",t});
-      if(inRange(t.start)) ev.push({d:t.start,k:"in",lab:"就任",t});
+      // 第1回の版は貴族院を開会日（参考）の構成で出しているので、それより前の就任・退任は並べない
+      const kzIn = d => inRange(d) && d>kzDay(D);
+      if(kzIn(t.end) && t.reason!=="貴族院廃止") ev.push({d:t.end,k:"out",lab:t.reason||"退任",t});
+      if(kzIn(t.start)) ev.push({d:t.start,k:"in",lab:"就任",t});
       continue;
     }
     if(inRange(t.end) && REASON_OUT.has(t.reason)) ev.push({d:t.end,k:"out",lab:t.reason,t});
