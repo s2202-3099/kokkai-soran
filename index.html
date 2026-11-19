@@ -333,7 +333,7 @@ function renderTop(){
     <header class="page">
       <p class="eyebrow">衆議院・参議院・貴族院 1890–</p>
       <h1>議員総覧</h1>
-      <p class="lede">衆院総選挙の投票日ごとに、その日の国会にいた議員を一人一つの番号でまとめた名簿です。いまは衆院総選挙${S.versions.length}回（${S.versions[0].date.slice(0,4)}〜${S.versions.at(-1).date.slice(0,4)}年、${S.versions.some(v=>v.n===22||v.n<=13)?`大選挙区制の${S.versions.filter(v=>v.n===22||v.n<=13).length}回、`:""}${S.versions.some(v=>v.n===14||v.n===15)?`小選挙区制の${S.versions.filter(v=>v.n===14||v.n===15).length}回、`:""}中選挙区制の${S.versions.filter(v=>v.n<=40&&v.n>=16&&v.n!==22).length}回と並立制の${S.versions.filter(v=>v.n>=41).length}回）と、その投票日に在職していた参院議員（1947年4月までは貴族院議員）が入っています。</p>
+      <p class="lede">衆院総選挙の投票日ごとに、その日の国会にいた議員を一人一つの番号でまとめた名簿です。いまは衆院総選挙${S.versions.length}回（${S.versions[0].date.slice(0,4)}〜${S.versions.at(-1).date.slice(0,4)}年、${S.versions.some(v=>v.n===22||(v.n>=7&&v.n<=13))?`大選挙区制の${S.versions.filter(v=>v.n===22||(v.n>=7&&v.n<=13)).length}回、`:""}${S.versions.some(v=>v.n<=6||v.n===14||v.n===15)?`小選挙区制の${S.versions.filter(v=>v.n<=6||v.n===14||v.n===15).length}回、`:""}中選挙区制の${S.versions.filter(v=>v.n<=40&&v.n>=16&&v.n!==22).length}回と並立制の${S.versions.filter(v=>v.n>=41).length}回）と、その投票日に在職していた参院議員（1947年4月までは貴族院議員）が入っています。</p>
       <div class="totals"><span>版 <b>${S.versions.length}</b></span><span>人物 <b>${nP.toLocaleString()}</b></span><span>在職 <b>${nT.toLocaleString()}</b></span><span>政党 <b>${Object.keys(S.orgs).length}</b></span></div>
     </header>
     <section aria-labelledby="vh"><h2 id="vh">版</h2>

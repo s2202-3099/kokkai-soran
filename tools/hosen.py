@@ -192,3 +192,29 @@ def bullets(text, heading=r"補欠当選"):
                     "vacated_date": f"{int(rm[1]):04d}-{int(rm[2]):02d}-{int(rm[3]):02d}" if rm else "",
                     "reason": _reason(why)})
     return out
+
+
+SHU_BULLET = re.compile(r"^\*\s*(\S+?[都道府県])第(\d+)区\s*\[\[([^\]|]+)(?:\|([^\]]+))?\]\]（([^）]*)）\s*→\s*\[\[([^\]|]+)(?:\|([^\]]+))?\]\]（([^）]*)）", re.M)
+
+
+def shu_bullets(text, heading=r"補欠当選"):
+    """1889年の法の時代（第6回など）の衆院選の記事の、箇条書きの補欠当選
+    （* 熊本県第3区 [[古荘嘉門]]（1899.6.3辞職）→[[犬飼真平]]（1899.6.29補欠当選））。
+    当選者の党派は書かれていないので空。"""
+    m = re.search(r"^=+\s*" + heading + r"[^=\n]*=+\s*$", text, re.M)
+    if not m:
+        return []
+    nxt = re.search(r"^=+[^=\n]+=+\s*$", text[m.end():], re.M)
+    sec = text[m.end(): m.end() + (nxt.start() if nxt else len(text))]
+    out = []
+    for b in SHU_BULLET.finditer(strip_refs(sec)):
+        why, won = b.group(5), b.group(8)
+        rm, wm = REASON.search(why), REASON.search(won)
+        out.append({"date": f"{int(wm[1]):04d}-{int(wm[2]):02d}-{int(wm[3]):02d}" if wm else "",
+                    "kind": "再選挙" if "再選挙" in won else "補欠選挙", "district": f"{b.group(1)}第{b.group(2)}区",
+                    "winner_article": b.group(6).strip(), "winner_name": (b.group(7) or b.group(6)).strip(),
+                    "winner_party": "", "old_party": "", "old_article": b.group(3).strip(),
+                    "old_name": (b.group(4) or b.group(3)).strip(),
+                    "vacated_date": f"{int(rm[1]):04d}-{int(rm[2]):02d}-{int(rm[3]):02d}" if rm else "",
+                    "reason": _reason(why[rm.start(4):] if rm else why)})
+    return out
