@@ -59,6 +59,18 @@ def strip(s):
     return re.sub(r"'''?", "", s)
 
 
+_MUNI = {}
+
+
+def muni():
+    if not _MUNI:
+        import json
+        import os
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "muni.json"), encoding="utf-8") as f:
+            _MUNI.update(json.load(f))
+    return _MUNI
+
+
 def resolve(s, last=False):
     """文字列の中の土地を都道府県にする。「現・○○県」「現在の○○県」があればそれを優先。last=True なら最後に出てくる土地。"""
     m = re.search(r"(?:現・|現在の|現在・|現：|現在は|現 |現)\s*((?:" + "|".join(sorted(PREFS, key=len, reverse=True)) + r"))", s)
@@ -80,6 +92,17 @@ def resolve(s, last=False):
     for k, p in CITY.items():
         for x in re.finditer(re.escape(k) + (r"(?:市|区)?" if len(k) >= 3 else r"(?:市|区)"), s):
             tiers[2].append((x.start(), p))
+    # 最後の段：いまの市町村名（tools/muni.json。Wikipedia の「○○県の市町村」の分類から作った、
+    # 名前が一つの都道府県にしかない市町村）。前の字が漢字・仮名なら別の語の一部（「新町」が「…新町」）として数えない
+    tiers.append([])
+    for x in re.finditer(r"(?<![一-龥ぁ-んァ-ヶ々ー])[一-龥ぁ-んァ-ヶ々ー]{1,10}?[市町村]|(?<=[都道府県郡])[一-龥ぁ-んァ-ヶ々ー]{1,10}?[市町村]", s):
+        n = x.group(0)
+        if n not in muni() or len(n) < 3:
+            continue
+        # 町・村は、昔の同じ名前の町村（ほかの県にもある「朝日村」など）と取り違えやすいので、
+        # 「現・」「現在の」などが付いたものと、それだけで書かれたもの（分類名「○○町出身の人物」）に限る
+        if n.endswith("市") or n == s.strip() or re.search(r"現(?:在の|在は|・|：|:)?\s*$", s[max(0, x.start() - 4):x.start()]):
+            tiers[3].append((x.start(), muni()[n]))
     for hits in tiers:
         # 学校・会社などの名前の一部（「東京大学」「長崎県立…」）は土地に数えない
         hits = [(i, p) for i, p in hits if not re.match(r"[^、。（）\s]{0,6}?(?:" + SCHOOLISH + ")", s[i + 1:i + 14])]

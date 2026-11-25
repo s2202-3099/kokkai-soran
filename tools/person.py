@@ -79,7 +79,7 @@ def birth(t, ib):
     return "", ""
 
 
-def kana(t, ib):
+def _kana_first(t, ib):
     k = clean(field(ib, "各国語表記"))
     if k and re.fullmatch(r"[ぁ-ゖー\s　・]+", k):
         return re.sub(r"[\s　]+", " ", k)
@@ -99,6 +99,46 @@ def kana(t, ib):
         return ""
     first = pieces[0] if len(pieces[0]) >= 2 else pieces[0] + pieces[-1][-1:]
     return " ".join(first[:2]) if len(first) >= 2 else ""
+
+
+def kana(t, ib):
+    return _kana_first(t, ib) or kana_lead(t)
+
+
+def _hira(s):
+    return "".join(chr(ord(c) - 0x60) if "ァ" <= c <= "ヶ" else c for c in s)
+
+
+def kana_lead(t):
+    """上の読み方で読めないときの冒頭の読み。
+    - 冒頭の一文の太字から読む（情報欄の中の旧字体などの太字は飛ばす）。
+    - 名前の読みの前に旧字体・別の表記が並ぶ（「（{{旧字体|…}}、なかの てつぞう、」「（渡邉 嘉蔵、渡辺 カ三、わたなべ かぞう、」）。
+    - 片仮名の名前の読み（「くつぬぎ タケこ」「かとう シヅエ」）は平仮名にする。
+    - 読みの後ろが空白・日付・注（「おかもと りゅういち [[1906年]]」「きしま とらぞう{{Refnest…」「こまつ もとき –」）。
+    - 「'''山口 哲夫'''|やまぐち てつお|1928年…」のようにテンプレートの引数で読みを書くもの。
+    姓と名の二つに分かれ、平仮名を含む読みだけを採る。"""
+    pos = None
+    for m in re.finditer("'''", t):
+        ls = t.rfind("\n", 0, m.start()) + 1
+        line = t[ls:m.start()]
+        if line.lstrip().startswith(("|", "!", "{{", "<")) or "=" in line:
+            continue
+        pos = m.start()
+        break
+    if pos is None:
+        return ""
+    lead = t[pos:pos + 1500]
+    lead = re.sub(r"<ref[^>]*/>|<ref.*?</ref>", "", lead, flags=re.S)
+    lead = re.sub(r"\{\{旧字体\|([^{}]*)\}\}", r"\1", lead)
+    lead = lead.replace("'''", "")
+    m = re.match(r"[^（(|\n]{1,30}?[（(|]((?:[^、（）()|\n]{1,40}?、){0,3}?)\s*([ぁ-ゖァ-ヶー]+[ \t　]+[ぁ-ゖァ-ヶー]+)\s*(?=[、，,）)|/／{<–\-\[]|\s|$)", lead)
+    if not m:
+        return ""
+    if re.search(r"[ぁ-ゖ]", m.group(1)):
+        return ""   # 前に並ぶものに平仮名がある（別の読み・本名の読み）なら採らない
+    if not re.search(r"[ぁ-ゖ]", m.group(2)):
+        return ""   # 片仮名だけのもの（外国名の表記など）は採らない
+    return _hira(re.sub(r"[ \t　]+", " ", m.group(2)).strip())
 
 
 def sex(t):
