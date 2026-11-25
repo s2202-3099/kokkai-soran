@@ -290,3 +290,55 @@ def parse(title, text):
             fixed.append((s_, e_, area))
         spans = fixed
     return {"title": title, "kinds": ks, "pref": pref, "spans": spans, "src": src, "death": death}
+
+
+# ---- 院内会派 ----
+KAIHA = ["研究会", "公正会", "交友倶楽部", "同和会", "同成会", "火曜会", "無所属倶楽部",
+         "茶話会", "土曜会", "木曜会", "無所属団"]   # 後の4つは明治・大正の会派（1928年までに解散・合同）
+# 会派のあった期間（それぞれの会派の記事による。終わりの日は解散・合同の日で、その日にはもうない）。
+# 記事に書かれた会派でも、投票日になかった会派には入れない（1908年の版に1919年結成の公正会が出ないように、
+# 1928年の版に同和会へ合同した茶話会が出ないように）。無所属団は第一次（1898年頃〜1919年11月25日）と第二次（1921年12月16日〜1928年2月1日）
+KAIHA_SPANS = {"研究会": [("1891-11-04", "1947-05-03")], "茶話会": [("1893-07-22", "1928-02-01")],
+               "木曜会": [("1897-07-28", "1913-01-26")], "無所属団": [("1898-01-01", "1919-11-25"), ("1921-12-16", "1928-02-01")],
+               "土曜会": [("1901-12-07", "1919-11-15")], "交友倶楽部": [("1912-12-24", "1947-05-03")],
+               "公正会": [("1919-06-05", "1947-05-03")], "同成会": [("1919-11-15", "1947-05-03")],
+               "火曜会": [("1927-11-12", "1947-05-03")], "同和会": [("1928-02-01", "1947-05-03")],
+               "無所属倶楽部": [("1941-04-30", "1947-05-03")]}
+# 「憲法研究会」「史前研究会」「昭和研究会」は別（「院内会派研究会」「第3部研究会」は研究会）
+KAIHA_PAT = re.compile("|".join(("(?:(?<![一-龥ァ-ヶー])|(?<=会派)|(?<=\\d部))" + k) if k == "研究会" else k for k in KAIHA))
+# 情報欄で会派を書く欄（政治家の情報欄の「所属政党」、人物の情報欄の「政党」など）
+INFOBOX_FIELD = re.compile(r"\|\s*(?:所属政党|政党|所属会派|会派)\s*=")
+FIELD_START = re.compile(r"\n\s*\||\n\}\}|\s\|\s*[^=\[\]{}|<>\n]{1,20}?\s*=")
+
+
+def kaiha_alive(name, day):
+    return any(a <= day < b for a, b in KAIHA_SPANS[name])
+
+
+def kaiha_read(text):
+    """本人の記事に書かれた院内会派。[(会派, 読んだところ)]。読んだところは「本文」か「情報欄」。
+    本文：会派名の近くに所属の語（所属・属し・入会・加入など）があるもの、「（会派は研究会）」、「研究会の幹部」。
+    情報欄：「所属政党」「政党」の欄に書かれた会派名（「（立憲政友会→）研究会」のように並べてあれば、そこにある会派をすべて）。
+    本文で読めた会派を先に並べ、情報欄だけにある会派を後ろに足す。"""
+    text = re.sub(r"\[\[木曜会 \((?!貴族院)[^)\]]*\)\|[^\]]*\]\]", "（他の木曜会）", text)   # 陸軍・社会主義団体の木曜会
+    found = []
+    body = strip(text[lead_pos(text):])
+    masked = body.replace("無所属", "無〇〇")   # 会派名の「無所属（団・倶楽部・派）」の「所属」は所属の語に数えない
+    for m in KAIHA_PAT.finditer(body):
+        pre, post = masked[max(0, m.start() - 12):m.start()], masked[m.end():m.end() + 14]
+        if (re.search(r"所属|属し|属す|入会|に属|加入|会員|を組織|に参加", pre + "／" + post)
+                or re.search(r"会派は$", pre) or re.match(r"(?:の|で)(?:幹部|幹事|常務委員|領袖)", post)) \
+                and m.group(0) not in [k for k, _ in found]:
+            found.append((m.group(0), "本文"))
+    for f in INFOBOX_FIELD.finditer(text):
+        e = FIELD_START.search(text, f.end())
+        val = strip(text[f.end():e.start() if e else f.end() + 300])
+        for m in KAIHA_PAT.finditer(val):
+            if m.group(0) not in [k for k, _ in found]:
+                later = re.search(r"無所属(?!倶楽部|団|派|クラブ)", val[m.end():])   # 「（研究会→）（無所属→）」：後に会派を離れた
+                found.append((m.group(0), "情報欄・後に無所属" if later else "情報欄"))
+    return found
+
+
+def kaiha(text):
+    return [k for k, _ in kaiha_read(text)]

@@ -30,6 +30,8 @@ PYTHONPATH=tools python3 tools/run_kizokuin.py <貴族院の作業フォルダ> 
 python3 tools/fetch_kaiha.py data <参院の作業フォルダ>/kaiha.json
 # 台帳（data/*.csv）を作る
 PYTHONPATH=tools python3 tools/build.py <衆院の作業フォルダ> <参院の作業フォルダ> data
+# 会派の行がない貴族院議員の記事を取り直し、院内会派を足す（作業フォルダがなくても台帳だけで動く）
+PYTHONPATH=tools python3 tools/kz_kaiha.py data <作業フォルダ>
 # サイトのデータを作る
 python3 tools/build_site.py data site.json
 ```
@@ -38,7 +40,7 @@ python3 tools/build_site.py data site.json
 
 ## 残っていること
 
-- 貴族院の院内会派は、本人の記事から読めた人だけに入っています。1920年の第14回から後の版でも在職者の4〜8割ほど、明治期の版（三曜会・懇話会などの時期）ではほとんどが「会派の記載なし」です。
+- 貴族院の院内会派は、本人の記事（本文と情報欄）に書かれた人だけに入っています。1920年の第14回から後の版で在職者の5〜8割ほどです。第42回帝国議会（1920年2月）までは各会派が所属議員を公表しておらず（『議会制度百年史 院内会派編』）、それより前の版は記事に伝記として書かれた人だけで、在職者の1割に満たない版から3割ほどまでです（第1回の版は0人）。
 - 出生地が分からない人が417人、よみが分からない人が138人います（`docs/log.md` の 2026-11-19 の項）。
 
 ## おことわり
