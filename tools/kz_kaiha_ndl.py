@@ -11,9 +11,9 @@
 - 発言者情報の所属会派は、発言の日の所属ではなく、人ごとに一つの値（近衛文麿氏は火曜会の結成〈1927年〉より前の
   発言でも「火曜会」）。台帳では本人の記事の会派と同じく「所属の時期は確かめていない」として扱い、
   投票日にあった会派だけを入れる（kizokuin.KAIHA_SPANS）。
-- 同じ名前の別人（吉田茂氏は内務官僚と首相の二人が貴族院議員）を分けるため、発言者情報の在任期間
-  （officeTerm「大正5年10月1日～昭和20年12月16日」）の始まりの年が、台帳の在職の始まりの年と1年以内で合うものだけを使う。
-  在任期間がないときは、発言者が一人だけのときに限る。
+- 台帳に同じ名前の人が二人以上いるとき（吉田茂氏は内務官僚と首相の二人が貴族院議員）は、発言者情報の在任期間
+  （officeTerm「大正5年10月1日～昭和20年12月16日」）がその人の在職と重なる発言だけを使い、二人の在職が重なれば使わない。
+  よみが二つ以上ある（別人が混じっている）ときも使わない。
 - 所属会派の値が二つ以上あるとき（入力の揺れ）は、いちばん多いものが8割以上なら採る。
 - 「各派に属しない議員」「無所属」と書かれた人は、会派の行を作らない（一覧に出すだけ）。
 - その日に貴族院議長だった人は入れない。根拠は doc、出典は帝国議会会議録検索システム。すでにある行は変えない。
@@ -57,12 +57,29 @@ def get(params):
     raise RuntimeError("帝国議会会議録検索システムから取れなかった: " + url)
 
 
-def term_start_year(s):
-    m = re.match(r"(明治|大正|昭和)(\d+|元)年", s or "")
-    return ERA[m.group(1)] + (1 if m.group(2) == "元" else int(m.group(2))) if m else None
-
-
 persons = {r["person_id"]: r for r in rd("persons.csv")}
+same_name_ids = collections.defaultdict(list)
+for r in persons.values():
+    same_name_ids[r["name"]].append(r["person_id"])
+same_name = {k: len(v) for k, v in same_name_ids.items()}
+
+
+def wdate(s):
+    """「大正6年12月1日」→ 1917-12-01（月・日がなければ年の初め）。"""
+    m = re.match(r"(明治|大正|昭和)(\d+|元)年(?:(\d+)月)?(?:(\d+)日)?", s.strip())
+    if not m:
+        return None
+    y = ERA[m.group(1)] + (1 if m.group(2) == "元" else int(m.group(2)))
+    return f"{y}-{int(m.group(3) or 1):02d}-{int(m.group(4) or 1):02d}"
+
+
+def term_span(s):
+    a, _, b = (s or "").partition("～")
+    return wdate(a) or "0000", wdate(b) or "9999"
+
+
+def overlap(x, y):
+    return x[0] <= y[1] and y[0] <= x[1]
 orgs = rd("orgs.csv")
 oid = {r["name"]: r["org_id"] for r in orgs if r["lineage"] == "貴族院の会派"}
 KZ_REF = {"1890-07-01": "1890-11-29"}   # build.py と同じ
@@ -83,7 +100,7 @@ def in_office(t, day):
 
 
 need = collections.defaultdict(set)
-start_year = {}
+spans = collections.defaultdict(list)
 for t in terms:
     p = t["person_id"]
     if t["peer_type"] == "皇族議員" or p in has_kaiha:
@@ -91,8 +108,8 @@ for t in terms:
     for day in days:
         if in_office(t, day):
             need[p].add(day)
-    if t["start_date"]:
-        start_year.setdefault(p, set()).add(int(t["start_date"][:4]))
+for t in terms:
+    spans[t["person_id"]].append((t["start_date"] or "0000", t["end_date"] or "9999"))
 need = {p: v for p, v in need.items() if v}
 print("会派の行が一つもない在職者", len(need), flush=True)
 
@@ -121,21 +138,20 @@ for p in sorted(need):
     if not recs:
         result["発言が見つからない"] += 1
         continue
-    ys = start_year.get(p, set())
-    ok = []
-    for sp, yomi, grp, elec, term, day in recs:
-        y = term_start_year(term)
-        if y is not None:
-            if any(abs(y - y2) <= 1 for y2 in ys):
-                ok.append((sp, grp, term))
-        else:
-            ok.append((sp, grp, None))
-    people = {(sp, term) for sp, _, term in ok if term}
-    if not ok or len(people) > 1 or (not people and len({sp for sp, _, _ in recs}) > 1):
+    if same_name[name] > 1:
+        # 台帳に同じ名前の人が二人以上いる：発言者情報の在任期間が、この人の在職と重なる発言だけを使う
+        ok = [r for r in recs if r[4] and any(overlap(term_span(r[4]), sp) for sp in spans[p])]
+        others = [q for q in same_name_ids[name] if q != p]
+        if any(r[4] and any(overlap(term_span(r[4]), sp) for q in others for sp in spans.get(q, [])) for r in ok):
+            ok = []   # 二人の在職が重なっていて分けられない
+    else:
+        ok = recs
+    # よみが二つ以上あれば別人が混じっている（よみの入っていない発言は数えない）
+    if not ok or len({r[1] for r in ok if r[1]}) > 1:
         result["同じ名前の発言者が分けられない"] += 1
         listed["分けられない"].append(name)
         continue
-    groups = collections.Counter(g for _, g, _ in ok if g)
+    groups = collections.Counter(r[2] for r in ok if r[2])
     if not groups:
         result["所属会派の記載なし"] += 1
         continue
